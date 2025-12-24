@@ -1,0 +1,214 @@
+. General System Rules
+1.1. Role-Based Access
+
+Agent:
+
+Can create, view, and manage their own trips.
+
+Can raise disputes only for Active trips.
+
+Can view their own ledger and financial data.
+
+Can upload documents for trips, but cannot replace them.
+
+Cannot view other agents' data.
+
+Trip Creation: Agents can only create regular or bulk trips.
+
+Finance:
+
+Can view and manage all trips, financial records, and ledger entries for all agents.
+
+Can top-up agent accounts and mark documents (e.g., LR sheets) as received.
+
+Cannot close trips, resolve disputes, or modify trips.
+
+Can generate financial reports (e.g., trip summaries, agent performance).
+
+Admin:
+
+Has full system access: Can view, edit, and manage all trips, disputes, and users.
+
+Can close trips, resolve disputes, and manage financial records for all agents.
+
+User Management: Can create, edit, and delete users (Agents, Finance).
+
+Can view and manage audit logs for all system actions.
+
+Can generate and export reports for trip management, financial data, and agent performance.
+
+2. Trip Lifecycle and Management Rules
+2.1. Trip Lifecycle
+
+Trip States:
+
+Created: A trip has been initiated but is not yet active.
+
+Active: The trip is being carried out by the agent and is eligible for dispute raising.
+
+Completed: The trip has been finished, and the financial settlement has been calculated.
+
+In Dispute: The trip has an ongoing dispute that needs resolution.
+
+Bulk Trips:
+
+Bulk trips do not have financial settlements and cannot be disputed.
+
+No deductions (cess, halting, etc.) for bulk trips.
+
+Dispute Rules:
+
+Disputes can only be raised for Active trips.
+
+Disputes change the trip’s status to In Dispute and prevent the trip from being closed.
+
+Once a dispute is resolved, the trip status can be restored to Active.
+
+Amount disputes require an exact amount and change the trip's status to In Dispute.
+
+Dispute Resolution is performed by Admin.
+
+2.2. Financial Rules
+
+Ledger Entries:
+
+Ledger entries are append-only, meaning they cannot be modified or deleted.
+
+Excess Recovery generates a debit entry in the ledger.
+
+Final Settlement creates ledger entries for the final balance of the trip.
+
+Agent Account Top-ups can only be done by Finance and are recorded in the ledger.
+
+Balance Calculation:
+
+Regular trips require the calculation of the final balance based on freight, advance, and any deductions (cess, halting).
+
+Excess recovery entries are created for any overpayment or adjustments.
+
+2.3. Document Management Rules
+
+Document Upload:
+
+Agents can upload documents (LR Sheets, Bills, Proofs) but cannot replace them.
+
+Non-agent roles (Admin/Finance) can replace documents.
+
+Documents must be securely stored with no public access URLs.
+
+Document Types:
+
+Typical documents include LR Sheets, Bills, and Proof of Delivery.
+
+Documents should be linked to the appropriate trip ID and available only to roles with proper permissions.
+
+3. Dashboard and UI Behavior Rules
+3.1. General UI Behavior
+
+Responsive Design:
+
+The entire UI should be mobile-first, utilizing React-Bootstrap's Grid System for responsiveness.
+
+Components should adapt to various screen sizes (mobile, tablet, desktop).
+
+KPI Cards:
+
+KPIs such as Total Trips, Active Trips, and Trips in Dispute should be role-specific:
+
+Agent: Sees only their own trips.
+
+Finance: Sees all trips but focused on financial data.
+
+Admin: Sees all trip data, including detailed financials and user activities.
+
+Table Sorting and Pagination:
+
+Tables for trips, disputes, and ledger entries should include sorting by columns (e.g., Trip ID, Status, Amount, Date).
+
+Pagination should be implemented for long lists to ensure the UI remains manageable.
+
+Modals:
+
+Use modals to show detailed information (e.g., trip details, ledger entries, dispute resolutions).
+
+Ensure that actions taken in modals (e.g., submitting dispute resolutions, editing trip details) trigger updates to the relevant data.
+
+Toast Notifications:
+
+Toast notifications should be used to indicate success or failure for actions such as:
+
+Trip creation.
+
+Dispute raised/resolved.
+
+Financial top-up completed.
+
+3.2. Role-Specific UI Rules
+
+Agent Dashboard:
+
+Trip Overview: Only the agent’s own trips should be visible, with the option to raise disputes on active trips.
+
+Disputes Section: Display only disputes raised by the agent.
+
+Finance Dashboard:
+
+Ledger Overview: Display all ledger entries for trips, with the ability to top-up agent accounts.
+
+Document Management: Allow Finance to mark documents as received, but not to replace them.
+
+Reports: Enable the generation of financial reports like trip reports and agent performance summaries.
+
+Admin Dashboard:
+
+Trip Management: Admin has full access to all trips, including the ability to close, resolve disputes, and modify trip details.
+
+User Management: Admin can create, edit, and delete users (agents, finance).
+
+Audit Logs: Admin can view audit logs for all system actions, including trip creation, dispute resolutions, and document uploads.
+
+4. Security and Data Integrity Rules
+4.1. Authentication and Authorization
+
+JWT Authentication:
+
+Use JWT tokens for secure authentication.
+
+Only authenticated users can access the dashboards.
+
+Use role-based authorization to restrict access to resources based on user roles (Agent, Finance, Admin).
+
+4.2. Data Validation and Integrity
+
+Form Validation:
+
+Trip Creation: Ensure that required fields (Route, Freight, Advance, Trip Type) are entered before submission.
+
+Dispute Form: Validate that the amount for the dispute is correct and that the dispute is only raised for active trips.
+
+Ledger Entries: Ensure that financial data is correctly validated for agent balances, payments, and top-ups.
+
+Immutable Data:
+
+Audit logs are immutable—actions such as trip creation, dispute resolution, or document uploads cannot be deleted or modified.
+
+Ledger entries are append-only and cannot be edited or deleted.
+
+5. Reporting Rules
+5.1. Report Generation
+
+Report Types:
+
+Trip Reports: Summary of trips for a given time period or agent.
+
+Financial Reports: Display the total amount for each agent, including advances, deductions, and final balances.
+
+Agent Performance Reports: Track agent performance based on completed trips, dispute count, and financial settlements.
+
+Export Options:
+
+All reports should have the option to export as CSV files.
+
+Admin and Finance should have access to full reports.
+
+This Rules File defines the behavior, security, and UI requirements for the Transport Management System (TMS) and outlines the permissions and restrictions for each user role. It will guide the system development, ensuring all components are built in alignment with the business logic. Let me know if you need further modifications or clarifications!

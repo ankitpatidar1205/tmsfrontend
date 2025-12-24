@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-text-primary;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+      'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  * {
+    @apply box-border;
+  }
+}
+
+@layer components {
+  /* 3D Button Styles */
+  .btn-3d-primary {
+    @apply bg-primary text-white font-semibold rounded-lg shadow-3d;
+    transition: all 0.2s ease;
+  }
+
+  .btn-3d-primary:hover {
+    @apply shadow-3d-hover;
+    transform: translateY(-2px);
+  }
+
+  .btn-3d-primary:active {
+    @apply shadow-3d-active;
+    transform: translateY(0);
+  }
+
+  .btn-3d-secondary {
+    @apply bg-secondary text-text-primary font-semibold rounded-lg shadow-3d;
+    transition: all 0.2s ease;
+  }
+
+  .btn-3d-secondary:hover {
+    @apply shadow-3d-hover;
+    transform: translateY(-2px);
+  }
+
+  .btn-3d-secondary:active {
+    @apply shadow-3d-active;
+    transform: translateY(0);
+  }
+
+  /* Card Styles */
+  .card {
+    @apply bg-background-light rounded-lg p-6 shadow-3d border-2 border-secondary;
+  }
+
+  .card-3d {
+    @apply bg-white rounded-lg shadow-3d border-2 border-secondary;
+  }
+
+  /* Input Styles */
+  .input-field {
+    @apply w-full px-4 py-2 bg-background-light border-2 border-secondary rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-primary transition-all;
+  }
+
+  .input-field-3d {
+    @apply w-full px-4 py-2 bg-background-light border-2 border-secondary rounded-lg text-text-primary placeholder-text-muted;
+    transition: all 0.2s ease;
+  }
+
+  .input-field-3d:focus {
+    @apply border-primary shadow-3d;
+    transform: translateY(-1px);
+  }
+
+  /* Sidebar Link Styles */
+  .sidebar-link {
+    @apply flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200;
+  }
+
+  .sidebar-link:hover {
+    @apply bg-primary bg-opacity-20 text-white;
+  }
+
+  .sidebar-link.active {
+    @apply bg-primary text-white shadow-3d;
+  }
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #DDD1C2;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #B69F85;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4B3626;
+}

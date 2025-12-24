@@ -1,0 +1,203 @@
+I've integrated the requirements from your provided PRD (Product Requirements Document) into a cohesive summary for the development task. Based on the PRD and your previous request, here's the action plan for implementing the system:
+
+---
+
+**Action Plan for System Development (TMS)**
+
+### **1. Dashboard and Role-Based Access:**
+
+* **Role-Specific Dashboards:**
+
+  * Implement role-based dashboards (Admin, Finance, Agent) with **unique UI components** for each role.
+  * **Admin Dashboard**: Full access to trip management, dispute resolutions, user management, and audit logs.
+  * **Finance Dashboard**: View all trips and financial records, with functionalities for top-ups, document marking, and generating reports.
+  * **Agent Dashboard**: View and manage only their trips and financial data. Can raise disputes but only for active trips.
+
+### **2. Sidebar and Navbar:**
+
+* **Responsive Sidebar & Navbar**:
+
+  * Design a **mobile-first** sidebar that adjusts for desktop, tablet, and mobile views.
+  * Sidebar should **expand/collapse** properly on mobile and tablet devices.
+  * The **toggle button** for the sidebar should function correctly across all screen sizes.
+
+* **Menu Based on Roles**:
+
+  * **Admin**: Full access to all menu items like Dashboard, Members, Create Plan, Reports, and Settings.
+  * **Finance**: Limited to financial management, trip oversight, and reports.
+  * **Agent**: Limited to creating trips, viewing their own data, and raising disputes.
+
+### **3. Modals and Buttons:**
+
+* **Add, Edit, View, and Delete Modals**:
+
+  * Each section (Members, Trips, Sessions) should have modals for **adding**, **viewing**, **editing**, and **deleting** data.
+  * The **Add modal** should allow data entry for trips, members, and other relevant entities.
+  * The **View modal** should display details of the selected entity (trip, member).
+  * The **Edit modal** should allow modifications.
+  * The **Delete modal** should confirm actions before proceeding.
+
+### **4. Document Management:**
+
+* **Document Upload & Security**:
+
+  * Allow agents to upload documents (e.g., LR Sheets, Bills) but prevent them from replacing documents. Only **Admin** and **Finance** roles can replace documents.
+  * Ensure **secure storage** of documents and restrict access based on user roles.
+
+### **5. Financial Management:**
+
+* **Ledger & Financial Entries**:
+
+  * Implement an **append-only ledger system** for transactions, including trip-related financial entries (advance, final balance, excess recovery).
+  * **Finance** should manage top-ups and view all ledger entries. Agents can only view their own financial data.
+
+### **6. Dispute Management:**
+
+* **Dispute Rules**:
+
+  * Allow agents to raise disputes only for **active trips**. Once raised, the trip’s status should change to **In Dispute**.
+  * **Admin** can resolve disputes, restoring trips to **Active** status if needed.
+
+### **7. Reports and KPIs:**
+
+* **Reporting Module**:
+
+  * Implement **role-based reports**: trip reports, agent performance, and financial summaries.
+  * Allow report **export** as CSV files.
+  * **Admin** can generate detailed reports for trips, disputes, and financial settlements.
+  * **Finance** can generate financial reports and track agent performance.
+  * **Agent** can only generate reports for their own trips.
+
+### **8. Responsive Design & UI Components:**
+
+* **Mobile-First Design**:
+
+  * The entire system, including the **sidebar**, **navbar**, **tables**, and **modals**, should be **responsive** to different screen sizes.
+  * Use **React-Bootstrap** for UI components to ensure clean and consistent design across devices.
+
+* **Tables with Sorting & Pagination**:
+
+  * Implement tables with **sortable columns** and **pagination** for large datasets like trips, disputes, and ledger entries.
+  * Tables should adjust based on the screen size, ensuring proper data presentation on all devices.
+
+### **9. Authentication & Authorization:**
+
+* **JWT Authentication**:
+
+  * Ensure secure **JWT-based authentication** for all users (Admin, Finance, Agent).
+  * Roles should be assigned properly to restrict access to only authorized resources and data.
+
+### **10. Notifications:**
+
+* **Toast Notifications**:
+
+  * Use **React-Toastify** to provide **toast notifications** for actions like trip creation, dispute resolutions, ledger updates, etc.
+  * Notifications should be visible briefly and disappear after a few seconds.
+
+### **11. Security & Data Integrity:**
+
+* **Immutable Data**:
+
+  * Ensure **audit logs** and **ledger entries** are **immutable** and cannot be modified or deleted after creation.
+  * Ensure **data validation** for trip creation, dispute raising, and financial transactions to maintain data integrity.
+
+---
+
+### **PRD Integration for Implementation:**
+
+* **Trip Management**: Implement features such as tracking trip statuses (Created, Active, Completed, In Dispute) with proper data flow for disputes, financial settlements, and trip updates.
+* **Financial Ledger**: Ensure the ledger system works based on the append-only rule, supporting various transaction types (advance, excess recovery).
+* **Dispute Handling**: Only allow active trips to raise disputes and ensure that disputes are resolved by Admin with appropriate status updates.
+* **Document Management**: Secure document upload and replace permissions for Finance and Admin only.
+
+This comprehensive plan aligns with the **Transport Management System (TMS) PRD** and incorporates role-specific functionalities, mobile responsiveness, and secure data handling as outlined in the document.
+
+---
+
+Let me know if you'd like me to further refine or expand any part of this!
+Project Requirements Document (PRD) for the TMS , 
+________________________________________
+Project Requirements Document (PRD)
+Project Name	(Transport Management System) 
+Document Version	1.0
+Target Audience	Developers, QA, Project Managers
+Based On	Detailed Documentation v10, Wireframes, Agent Wallet Workflows
+________________________________________
+1. Product Overview
+The TMS  is a comprehensive logistics management web application designed for NKMLT. It facilitates the full lifecycle of transportation orders—from trip creation to financial settlement. Unlike standard systems, TMS v10 operates on a "Pre-paid Agent Wallet" model, where agents manage a floating cash balance provided by the company to execute trips.
+The system supports a hierarchical structure involving Head Office, multiple Branches (C1, C2), a Shared Finance Manager, and Field Agents.
+
+________________________________________
+2. User Roles & Permissions
+2.1. Agent (Operational Role)
+•	Scope: Restricted to their specific Branch (C1 or C2) and their own Trips1111.
++1
+•	Key Functions:
+o	Create Trips (Regular & Bulk)2.
+o	Wallet Management: View current balance (cannot edit). Perform Peer-to-Peer transfers to other agents333.
++1
+o	Operations: Add mid-trip payments (Fuel/Food), which auto-debit their wallet444.
++1
+o	Disputes: Raise disputes if issues arise (blocks closing)555.
++1
+o	Closing: Close Regular trips by paying the final settlement to the driver6.
+•	Restrictions: Cannot modify LR Sheet status7. Cannot upload attachments (View Only)8. Cannot see Bank Details9.
++2
+2.2. Finance Manager (Shared Role)
+•	Scope: Global visibility across all branches (C1 & C2). Acts as the central banker10.
+•	Key Functions:
+o	Wallet Control: Issue "Bulk Top-ups" (Credits) to Agents. Perform "Virtual Top-ups" for direct payments (e.g., Repairs)11.
+o	Document Control: Verify and update LR Sheet status (Received/Not Received)12.
+o	Attachments: Upload official documents (LR Copies, PODs)13.
+o	Reporting: Access Bank-wise spend reports and Ledger summaries14.
+•	Restrictions: Cannot create trips (Operational task)15.
+2.3. Administrator (System Role)
+•	Scope: Full system access (God Mode)16.
+•	Key Functions:
+o	Dispute Resolution: Exclusive authority to resolve blocked trips17.
+o	Overrides: Can close any trip, edit ledgers, and view full Audit Logs18181818.
++1
+________________________________________
+3. Core Modules & Functional Requirements
+3.1. Trip Management Module
+•	Trip Types:
+o	Regular Trip: Full financial tracking. Requires Freight & Advance inputs. Ends with a Settlement calculation19.
+o	Bulk Trip: Simplified tracking. Ignores Freight/Settlement logic. Marked "Completed" directly20.
+•	Trip Lifecycle States:
+1.	Active: Default state. Allows payments and edits21.
+2.	In Dispute: Triggered by Agent. BLOCKS the "Close Trip" action22.
+3.	Completed: Final state. No further edits allowed23.
+3.2. Financial Engine (The Wallet Logic)
+•	Concept: The Agent acts as a wallet holder.
+•	Transaction Types:
+o	Bulk Top-Up (Credit): Company transfers ₹10L to Agent24.
+o	Operational Expense (Debit): Agent pays Advance, Fuel, or Food. Deducts immediately from wallet25.
+o	Virtual Repair Top-Up (Credit + Debit): Finance pays for a repair directly. Recorded as Credit to Agent $\rightarrow$ Immediate Debit for Expense26.
+o	Peer Transfer (Debit/Credit): Agent A transfers to Agent B. Debit A / Credit B27.
+o	Final Settlement (Debit): Total Freight - (Advance + Expenses) = Final Balance paid to driver28.
+•	Closing Logic:
+o	Captures deductions: Cess, Kata, Excess Tonnage, Halting, Beta/Batta29.
+o	Note: Beta/Batta amount is credited back to the Agent's personal balance30.
+3.3. Document & LR Management
+•	LR Sheet Tracking: Binary status (Received / Not Received). Only editable by Finance/Admin31.
+•	Attachments: Support for up to 4 files per trip (Images/PDFs). Upload restricted to Finance/Admin32.
+3.4. Dispute Management
+•	Trigger: Agent raises dispute (Reason + Amount/Category)33.
+•	Effect: Trip Status $\rightarrow$ In Dispute. "Close Trip" button disabled34.
+•	Resolution: Admin reviews and resolves. Trip Status $\rightarrow$ Active35.
+________________________________________
+4. Dashboard & Reporting
+4.1. Dashboards
+•	Agent: Active Trips, Wallet Balance, Pending LR Sheets, Disputed Trips36.
+•	Finance: Daily Mid-Payments, Daily Top-Ups, Bank-wise Spend Summary37.
+•	Admin: System-wide counts (Active/Completed), Audit Log Activity38.
+4.2. Reporting
+•	Formats: Export to CSV/Excel39.
+•	Key Reports:
+o	Trips Detail Report40.
+o	Ledger by Bank41.
+o	Agent Performance & Wallet History42.
+o	Route Profitability Heatmap43.
+o	Trip Closing Audit List44.
+________________________________________
+
