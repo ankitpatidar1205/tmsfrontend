@@ -72,7 +72,7 @@ const AgentProfile = () => {
     ).length
     const bulkTrips = agentTrips.filter(t => t.isBulk).length
     
-    // Calculate current balance from ledger with improved matching
+    // Calculate current balance from ledger - EXACTLY same logic as Ledger.jsx
     const agentLedger = ledger.filter(l => {
       const ledgerAgentId = l.agentId?.toString() || l.agentId?._id?.toString() || l.agentId?.id?.toString()
       return ledgerAgentId === agentIdStr ||
@@ -84,13 +84,138 @@ const AgentProfile = () => {
              l.agentId?.id === agentId
     })
     
-    const currentBalance = agentLedger.reduce((sum, entry) => {
-      if (entry.direction === 'Credit') {
-        return sum + (parseFloat(entry.amount) || 0)
-      } else {
-        return sum - (parseFloat(entry.amount) || 0)
+    // Remove duplicates
+    const uniqueEntries = []
+    const seenEntries = new Set()
+    agentLedger.forEach(entry => {
+      const entryId = entry.id || entry._id
+      if (entryId && !seenEntries.has(entryId)) {
+        seenEntries.add(entryId)
+        uniqueEntries.push(entry)
+      } else if (!entryId) {
+        const entryKey = `${entry.type}_${entry.amount}_${entry.createdAt || entry.date}_${entry.lrNumber || entry.tripId || ''}`
+        if (!seenEntries.has(entryKey)) {
+          seenEntries.add(entryKey)
+          uniqueEntries.push(entry)
+        }
       }
-    }, 0)
+    })
+    
+    // Sort chronologically (oldest first)
+    const finalLedger = uniqueEntries.sort((a, b) => {
+      const dateA = new Date(a.createdAt || a.date || 0).getTime()
+      const dateB = new Date(b.createdAt || b.date || 0).getTime()
+      return dateA - dateB
+    })
+    
+    // Helper function to check if Finance payment entries match
+    const financePaymentMatches = (entry1, entry2) => {
+      const amount1 = parseFloat(entry1.amount) || 0
+      const amount2 = parseFloat(entry2.amount) || 0
+      if (Math.abs(amount1 - amount2) > 0.01) return false
+      if (entry1.lrNumber && entry2.lrNumber && 
+          String(entry1.lrNumber).trim() === String(entry2.lrNumber).trim()) {
+        return true
+      }
+      if (entry1.tripId && entry2.tripId && 
+          String(entry1.tripId) === String(entry2.tripId)) {
+        return true
+      }
+      return false
+    }
+    
+    // Pre-process: Find all Finance payment pairs
+    const financePaymentPairs = []
+    const processedCredits = new Set()
+    const processedDebits = new Set()
+    
+    finalLedger.forEach(creditEntry => {
+      if (creditEntry.type === 'Top-up' && 
+          creditEntry.paymentMadeBy === 'Finance' && 
+          creditEntry.direction === 'Credit') {
+        const creditId = creditEntry.id || creditEntry._id
+        if (processedCredits.has(creditId)) return
+        
+        const matchingDebit = finalLedger.find(debitEntry => {
+          const debitId = debitEntry.id || debitEntry._id
+          if (processedDebits.has(debitId)) return false
+          return debitEntry.type === 'On-Trip Payment' && 
+                 debitEntry.paymentMadeBy === 'Finance' && 
+                 debitEntry.direction === 'Debit' &&
+                 financePaymentMatches(creditEntry, debitEntry)
+        })
+        
+        if (matchingDebit) {
+          const creditId = creditEntry.id || creditEntry._id
+          const debitId = matchingDebit.id || matchingDebit._id
+          financePaymentPairs.push({
+            creditId: creditId,
+            debitId: debitId
+          })
+          processedCredits.add(creditId)
+          processedDebits.add(debitId)
+        }
+      }
+    })
+    
+    // Calculate balance
+    let balance = 0
+    finalLedger.forEach(entry => {
+      const entryAmount = parseFloat(entry.amount) || 0
+      const entryId = entry.id || entry._id
+      
+      // Skip Trip Closed
+      if (entry.type === 'Trip Closed') return
+      
+      // Skip informational entries (balance not affected)
+      if (entry.isInformational === true) return
+      
+      // Skip Finance payment entries (both Credit and Debit)
+      const isFinanceCredit = entry.type === 'Top-up' && 
+                               entry.paymentMadeBy === 'Finance' && 
+                               entry.direction === 'Credit'
+      const isFinanceDebit = entry.type === 'On-Trip Payment' && 
+                             entry.paymentMadeBy === 'Finance' && 
+                             entry.direction === 'Debit'
+      
+      if (isFinanceCredit || isFinanceDebit) {
+        const isInPair = financePaymentPairs.some(pair => {
+          return (pair.creditId && entryId && String(pair.creditId) === String(entryId)) ||
+                 (pair.debitId && entryId && String(pair.debitId) === String(entryId))
+        })
+        if (isInPair) return // Skip both Credit and Debit
+      }
+      
+      // Handle Trip Created - always debit, use advance amount
+      if (entry.type === 'Trip Created') {
+        let advanceAmount = entryAmount
+        if (entry.advance && parseFloat(entry.advance) > 0) {
+          advanceAmount = parseFloat(entry.advance)
+        } else if (entry.tripId || entry.lrNumber) {
+          const trip = trips.find(t => 
+            (entry.tripId && (String(t.id) === String(entry.tripId) || String(t._id) === String(entry.tripId))) ||
+            (entry.lrNumber && t.lrNumber === entry.lrNumber)
+          )
+          if (trip && (trip.advance || trip.advancePaid)) {
+            const tripAdvance = parseFloat(trip.advance || trip.advancePaid || 0)
+            if (tripAdvance > 0) {
+              advanceAmount = tripAdvance
+            }
+          }
+        }
+        balance = balance - advanceAmount
+        return
+      }
+      
+      // Handle all other entries normally
+      if (entry.direction === 'Credit') {
+        balance = balance + entryAmount
+      } else {
+        balance = balance - entryAmount
+      }
+    })
+    
+    const currentBalance = balance
 
     return {
       name: selectedAgent.name || 'N/A',

@@ -18,7 +18,7 @@ const Trips = () => {
     tripId: '',
     route: '',
     status: 'Active',
-    freight: '',
+    freight: '',  
     agent: '',
   })
 

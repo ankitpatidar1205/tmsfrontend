@@ -9,11 +9,12 @@ import { toast } from 'react-toastify'
 const  Ledger = () => {
   const { user } = useAuth()
   const { role, isAgent, isAdmin } = useRole()
-  const { ledger, agents, getAgents, transferToAgent, addLedgerEntry, addTopUp, getTripsByBranch, loadAgents, loadLedger } = useData()
+  const { ledger, trips, agents, getAgents, transferToAgent, addLedgerEntry, addTopUp, getTripsByBranch, loadAgents, loadLedger, loadTrips } = useData()
   
-  // Load agents and ledger when component mounts (only once)
+  // Load agents, trips, and ledger when component mounts (only once)
   useEffect(() => {
     loadAgents()
+    loadTrips() // Load trips to get advance data for Trip Created entries
     loadLedger()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Empty dependency array - only run once on mount
@@ -45,18 +46,58 @@ const  Ledger = () => {
 
     // If Agent, show only their entries (restricted to their branch)
     if (isAgent()) {
-      // First filter by branch if agent has branch assigned
+      // First filter by agent - get all entries for this agent
+      // Improved matching: check agentId in multiple formats
+      const agentId = user?.id || user?._id
+      const agentIdStr = agentId ? String(agentId).trim() : ''
+      const agentName = user?.name
+      
+      filtered = filtered.filter(entry => {
+        const entryAgentId = entry.agentId?._id || entry.agentId?.id || entry.agentId
+        const entryAgentIdStr = entryAgentId ? String(entryAgentId).trim() : ''
+        const entryAgentName = entry.agent?.name || entry.agent || entry.agentName
+        
+        // Match by ID (multiple formats)
+        if (agentIdStr && entryAgentIdStr && entryAgentIdStr === agentIdStr) {
+          return true
+        }
+        
+        // Match by name
+        if (agentName && entryAgentName && String(entryAgentName).trim() === String(agentName).trim()) {
+          return true
+        }
+        
+        return false
+      })
+      
+      // Then filter by branch if agent has branch assigned
       if (user?.branch) {
         const branchTrips = getTripsByBranch(user.branch)
-        const branchTripIds = branchTrips.map(t => t.id)
-        filtered = filtered.filter(entry => 
-          branchTripIds.includes(entry.tripId) || 
-          entry.tripId === null || // Top-ups and transfers don't have tripId
-          ((entry.agentId === user?.id || entry.agentId === user?._id) || entry.agent === user?.name)
-        )
+        const branchTripIds = branchTrips.map(t => String(t.id || t._id))
+        filtered = filtered.filter(entry => {
+          // Always include entries without tripId (Top-ups, Transfers)
+          if (!entry.tripId) return true
+          
+          // Always include Trip Created entries (advance payments) for this agent
+          if (entry.type === 'Trip Created') return true
+          
+          // Always include Finance payment entries (On-Trip Payment and Top-up with paymentMadeBy='Finance')
+          // Finance payments should be visible to the agent they're made for
+          if (entry.paymentMadeBy === 'Finance') return true
+          
+          // Always include On-Trip Payment entries where this agent made the payment
+          // (even if trip belongs to different branch - agent made payment so should see it)
+          if (entry.type === 'On-Trip Payment' && 
+              (entry.agentId === user?.id || entry.agentId === user?._id || entry.agent === user?.name) &&
+              entry.isInformational !== true) {
+            return true
+          }
+          
+          // Check if tripId matches any branch trip (convert to string for comparison)
+          const entryTripId = String(entry.tripId)
+          return branchTripIds.some(id => String(id) === entryTripId)
+        })
       }
-      // Then filter by agent
-      filtered = filtered.filter(entry => (entry.agentId === user?.id || entry.agentId === user?._id) || entry.agent === user?.name)
     }
 
     // Filter by agent (for Admin/Finance)
@@ -66,6 +107,18 @@ const  Ledger = () => {
         entry.agentId?._id === selectedAgentId ||
         entry.agentId?.id === selectedAgentId
       )
+    }
+    
+    // For Finance/Admin: Exclude informational entries (trip creator entries when payment was made by another agent)
+    // Finance should only see payment maker's entries, not trip creator's informational entries
+    if (!isAgent()) {
+      filtered = filtered.filter(entry => {
+        // Exclude informational entries (these are for trip creators, not payment makers)
+        if (entry.isInformational === true) {
+          return false
+        }
+        return true
+      })
     }
 
     // Filter by date
@@ -84,26 +137,72 @@ const  Ledger = () => {
       })
     }
 
-    // Sort by date (newest first)
-    filtered.sort((a, b) => {
+    // Remove duplicates before processing (use entry ID as primary key)
+    const uniqueFilteredEntries = []
+    const seenFilteredEntries = new Set()
+    filtered.forEach(entry => {
+      const entryId = entry.id || entry._id
+      if (entryId && !seenFilteredEntries.has(entryId)) {
+        seenFilteredEntries.add(entryId)
+        uniqueFilteredEntries.push(entry)
+      } else if (!entryId) {
+        // Fallback for entries without ID
+        const entryKey = `${entry.type}_${entry.amount}_${entry.createdAt || entry.date}_${entry.lrNumber || entry.tripId || ''}`
+        if (!seenFilteredEntries.has(entryKey)) {
+          seenFilteredEntries.add(entryKey)
+          uniqueFilteredEntries.push(entry)
+        }
+      }
+    })
+    
+    // Sort by date (newest first for display)
+    uniqueFilteredEntries.sort((a, b) => {
       const dateA = new Date(a.createdAt || a.date || 0)
       const dateB = new Date(b.createdAt || b.date || 0)
       return dateB - dateA
     })
 
-    // Fix: Transform Trip Created entries to show as Debit (correct old database entries)
-    filtered = filtered.map(entry => {
-      if (entry.type === 'Trip Created' && entry.direction === 'Credit') {
+    // Fix: Transform Trip Created entries - correct amount and direction for old database entries
+    // Rule: Trip Created should ALWAYS debit only the advance amount, NOT freight
+    filtered = uniqueFilteredEntries.map(entry => {
+      if (entry.type === 'Trip Created') {
+        // Fix direction if it's Credit (should be Debit)
+        const correctedDirection = entry.direction === 'Credit' ? 'Debit' : entry.direction
+        
+        // Fix amount: ALWAYS use advance amount, NOT freight
+        // Priority: 1) trip.advance from trips array (source of truth), 2) entry.advance field, 3) keep original (fallback)
+        let correctedAmount = entry.amount
+        
+        // First try: Find trip and get advance from trip data (most reliable)
+        if (entry.tripId || entry.lrNumber) {
+          const trip = trips.find(t => 
+            (entry.tripId && (String(t.id) === String(entry.tripId) || String(t._id) === String(entry.tripId))) ||
+            (entry.lrNumber && t.lrNumber === entry.lrNumber)
+          )
+          if (trip && (trip.advance || trip.advancePaid)) {
+            const tripAdvance = trip.advance || trip.advancePaid || 0
+            if (tripAdvance > 0) {
+              correctedAmount = tripAdvance
+            }
+          }
+        }
+        
+        // Second try: Use advance field from ledger entry (if trip data not available)
+        if (correctedAmount === entry.amount && entry.advance && entry.advance > 0) {
+          correctedAmount = entry.advance
+        }
+        
         return {
           ...entry,
-          direction: 'Debit' // Correct old entries that were saved as Credit
+          direction: correctedDirection,
+          amount: correctedAmount // Use advance amount instead of freight
         }
       }
       return entry
     })
 
     return filtered
-  }, [ledger, filterDate, selectedAgentId, lrSearchTerm, isAgent, user, getTripsByBranch])
+  }, [ledger, trips, filterDate, selectedAgentId, lrSearchTerm, isAgent, user, getTripsByBranch])
 
   const clearFilters = () => {
     setFilterDate('')
@@ -117,24 +216,302 @@ const  Ledger = () => {
   const showAgentColumn = !isAgent()
 
   // Calculate current agent's balance
+  // IMPORTANT: Finance payments have NO net effect on balance
+  // Finance payment creates: Credit (Top-up) + Debit (On-Trip Payment)
+  // We should only count the Credit, NOT the Debit (because it's offset)
   const currentAgentBalance = useMemo(() => {
     if (!isAgent() || !user) return 0
-        const agentLedger = ledger.filter(l => 
-          (l.agentId === user?.id || l.agentId === user?._id) || l.agent === user?.name
-        )
-    return agentLedger.reduce((sum, entry) => {
-      // Fix: Trip Created should always be Debit for balance calculation
-      const direction = (entry.type === 'Trip Created' && entry.direction === 'Credit') 
-        ? 'Debit' 
-        : entry.direction
+    
+    const agentId = user?.id || user?._id
+    const agentIdStr = agentId ? String(agentId).trim() : ''
+    const agentName = user?.name
+    
+    // Improved matching: check agentId in multiple formats
+    const agentLedger = ledger.filter(l => {
+      const ledgerAgentId = l.agentId?._id || l.agentId?.id || l.agentId
+      const ledgerAgentIdStr = ledgerAgentId ? String(ledgerAgentId).trim() : ''
+      const ledgerAgentName = l.agent?.name || l.agent || l.agentName
       
-      if (direction === 'Credit') {
-        return sum + (entry.amount || 0)
-      } else {
-        return sum - (entry.amount || 0)
+      // Match by ID (multiple formats)
+      if (agentIdStr && ledgerAgentIdStr && ledgerAgentIdStr === agentIdStr) {
+        return true
       }
-    }, 0)
-  }, [ledger, isAgent, user])
+      
+      // Match by name
+      if (agentName && ledgerAgentName && String(ledgerAgentName).trim() === String(agentName).trim()) {
+        return true
+      }
+      
+      return false
+    })
+    
+    // Track Finance payment Credit entries to match with their Debit entries
+    // Finance payments create: Credit (Top-up) + Debit (On-Trip Payment)
+    // Only Credit should affect balance, Debit should be skipped
+    const financePaymentCredits = [] // Array of Finance Credit entries
+    
+    agentLedger.forEach(entry => {
+      if (entry.type === 'Top-up' && entry.paymentMadeBy === 'Finance') {
+        financePaymentCredits.push({
+          amount: parseFloat(entry.amount) || 0,
+          lrNumber: entry.lrNumber,
+          tripId: entry.tripId ? String(entry.tripId) : null,
+          createdAt: entry.createdAt || entry.date
+        })
+      }
+    })
+    
+    // Remove duplicates from agentLedger (in case same entry appears multiple times)
+    const uniqueEntries = []
+    const seenEntries = new Set()
+    agentLedger.forEach(entry => {
+      // Use entry ID as primary key for uniqueness
+      const entryId = entry.id || entry._id
+      if (entryId && !seenEntries.has(entryId)) {
+        seenEntries.add(entryId)
+        uniqueEntries.push(entry)
+      } else if (!entryId) {
+        // Fallback for entries without ID - use composite key
+        const entryKey = `${entry.type}_${entry.amount}_${entry.createdAt || entry.date}_${entry.lrNumber || entry.tripId || ''}`
+        if (!seenEntries.has(entryKey)) {
+          seenEntries.add(entryKey)
+          uniqueEntries.push(entry)
+        }
+      }
+    })
+    
+    // Sort entries chronologically (oldest first) for correct balance calculation
+    // IMPORTANT: Include ALL agent entries for balance calculation, don't filter by branch
+    const finalLedger = uniqueEntries.sort((a, b) => {
+      const dateA = new Date(a.createdAt || a.date || 0).getTime()
+      const dateB = new Date(b.createdAt || b.date || 0).getTime()
+      return dateA - dateB // Oldest first
+    })
+    
+    // Debug: Log all entries to verify Trip Created entries are included
+    console.log('=== All Entries for Balance Calculation ===')
+    finalLedger.forEach((entry, idx) => {
+      console.log(`${idx + 1}. Type: ${entry.type} | Direction: ${entry.direction} | Amount: ${entry.amount} | Advance: ${entry.advance} | LR: ${entry.lrNumber} | TripId: ${entry.tripId} | Date: ${entry.createdAt || entry.date}`)
+    })
+    
+    
+    // Track which Finance payments we've already matched (both Credit and Debit)
+    const matchedFinancePayments = new Set()
+    
+    // Helper function to check if Finance payment entries match
+    const financePaymentMatches = (entry1, entry2) => {
+      const amount1 = parseFloat(entry1.amount) || 0
+      const amount2 = parseFloat(entry2.amount) || 0
+      
+      // Amount must match
+      if (Math.abs(amount1 - amount2) > 0.01) return false
+      
+      // Match by LR number (most reliable)
+      if (entry1.lrNumber && entry2.lrNumber && 
+          String(entry1.lrNumber).trim() === String(entry2.lrNumber).trim()) {
+        return true
+      }
+      
+      // Match by trip ID
+      if (entry1.tripId && entry2.tripId && 
+          String(entry1.tripId) === String(entry2.tripId)) {
+        return true
+      }
+      
+      return false
+    }
+    
+    // Pre-process: Find all Finance payment pairs and mark them for skipping
+    const financePaymentPairs = []
+    const processedCredits = new Set()
+    const processedDebits = new Set()
+    
+    finalLedger.forEach(creditEntry => {
+      if (creditEntry.type === 'Top-up' && 
+          creditEntry.paymentMadeBy === 'Finance' && 
+          creditEntry.direction === 'Credit') {
+        const creditId = creditEntry.id || creditEntry._id
+        if (processedCredits.has(creditId)) return // Already processed
+        
+        const matchingDebit = finalLedger.find(debitEntry => {
+          const debitId = debitEntry.id || debitEntry._id
+          if (processedDebits.has(debitId)) return false // Already in a pair
+          
+          return debitEntry.type === 'On-Trip Payment' && 
+                 debitEntry.paymentMadeBy === 'Finance' && 
+                 debitEntry.direction === 'Debit' &&
+                 financePaymentMatches(creditEntry, debitEntry)
+        })
+        
+        if (matchingDebit) {
+          const pairKey = `${parseFloat(creditEntry.amount)}_${creditEntry.lrNumber || creditEntry.tripId || 'no-trip'}`
+          const creditId = creditEntry.id || creditEntry._id
+          const debitId = matchingDebit.id || matchingDebit._id
+          
+          financePaymentPairs.push({
+            credit: creditEntry,
+            debit: matchingDebit,
+            key: pairKey,
+            creditId: creditId,
+            debitId: debitId
+          })
+          
+          processedCredits.add(creditId)
+          processedDebits.add(debitId)
+          
+          console.log(`Found Finance payment pair: Credit ${creditEntry.amount} (ID: ${creditId}) + Debit ${matchingDebit.amount} (ID: ${debitId}) for LR ${creditEntry.lrNumber}`)
+        }
+      }
+    })
+    
+    console.log(`Total Finance payment pairs found: ${financePaymentPairs.length}`)
+    
+    // Calculate balance with explicit handling for each entry type
+    let balance = 0
+    let skippedEntries = []
+    let countedEntries = []
+    
+    finalLedger.forEach(entry => {
+      const entryAmount = parseFloat(entry.amount) || 0
+      const entryId = entry.id || entry._id || 'unknown'
+      
+      // STEP 1: Skip Trip Closed entries completely (informational only)
+      if (entry.type === 'Trip Closed') {
+        skippedEntries.push({ type: entry.type, amount: entryAmount, lrNumber: entry.lrNumber, reason: 'Trip Closed is informational only' })
+        return
+      }
+      
+      // Skip informational entries (entries marked as informational - balance not affected)
+      if (entry.isInformational === true) {
+        skippedEntries.push({ type: entry.type, amount: entryAmount, lrNumber: entry.lrNumber, reason: 'Informational entry (balance not affected)' })
+        return
+      }
+      
+      // STEP 2: Skip Finance payment entries (both Credit and Debit) - net zero effect
+      // Finance payment creates: Credit (Top-up) + Debit (On-Trip Payment)
+      // Both entries are VISIBLE in ledger but SKIPPED in balance calculation (net zero effect)
+      
+      // Check if this entry is part of a Finance payment pair
+      const isFinanceCredit = entry.type === 'Top-up' && 
+                               entry.paymentMadeBy === 'Finance' && 
+                               entry.direction === 'Credit'
+      const isFinanceDebit = entry.type === 'On-Trip Payment' && 
+                             entry.paymentMadeBy === 'Finance' && 
+                             entry.direction === 'Debit'
+      
+      if (isFinanceCredit || isFinanceDebit) {
+        // Check if this entry is part of a matched Finance payment pair
+        const matchingPair = financePaymentPairs.find(pair => {
+          const creditId = pair.creditId
+          const debitId = pair.debitId
+          
+          return (creditId && entryId && String(creditId) === String(entryId)) ||
+                 (debitId && entryId && String(debitId) === String(entryId))
+        })
+        
+        if (matchingPair) {
+          const entryKey = `${entryAmount}_${entry.lrNumber || entry.tripId || 'no-trip'}`
+          if (!matchedFinancePayments.has(entryKey)) {
+            matchedFinancePayments.add(entryKey)
+            skippedEntries.push({ 
+              type: entry.type, 
+              amount: entryAmount, 
+              lrNumber: entry.lrNumber, 
+              reason: `Finance payment ${isFinanceCredit ? 'credit' : 'debit'} (offset by matching ${isFinanceCredit ? 'debit' : 'credit'} - net zero effect)` 
+            })
+            console.log(`✓ Skipping Finance ${isFinanceCredit ? 'Credit' : 'Debit'}: ${entryAmount} for LR ${entry.lrNumber} (matched pair)`)
+            return // Skip this entry - don't count it in balance
+          } else {
+            console.log(`⚠ Finance ${isFinanceCredit ? 'Credit' : 'Debit'} already skipped: ${entryAmount} for LR ${entry.lrNumber}`)
+            return // Already skipped
+          }
+        } else {
+          console.log(`✗ Finance ${isFinanceCredit ? 'Credit' : 'Debit'} NOT in pair: ${entryAmount} for LR ${entry.lrNumber} - Will be counted`)
+        }
+      }
+      
+      // STEP 3: Handle Trip Created - always debit, use advance amount only
+      if (entry.type === 'Trip Created') {
+        let advanceAmount = entryAmount
+        
+        // Priority 1: Use entry.advance field (most reliable for ledger entries)
+        if (entry.advance && parseFloat(entry.advance) > 0) {
+          advanceAmount = parseFloat(entry.advance)
+        } 
+        // Priority 2: Try to get advance from trip data
+        else if (entry.tripId || entry.lrNumber) {
+          const trip = trips.find(t => 
+            (entry.tripId && (String(t.id) === String(entry.tripId) || String(t._id) === String(entry.tripId))) ||
+            (entry.lrNumber && t.lrNumber === entry.lrNumber)
+          )
+          if (trip && (trip.advance || trip.advancePaid)) {
+            const tripAdvance = parseFloat(trip.advance || trip.advancePaid || 0)
+            if (tripAdvance > 0) {
+              advanceAmount = tripAdvance
+            }
+          }
+        }
+        // Priority 3: Use entry.amount if it's already the advance amount
+        
+        // Always debit the advance amount (never credit)
+        // Even if direction says Credit, we debit the advance
+        balance = balance - advanceAmount
+        countedEntries.push({ 
+          type: entry.type, 
+          direction: 'Debit', 
+          amount: advanceAmount, 
+          lrNumber: entry.lrNumber, 
+          balance: balance,
+          originalAmount: entryAmount,
+          usedAdvance: advanceAmount
+        })
+        return
+      }
+      
+      // STEP 4: Handle all other entries normally
+      // Finance Credit entries (Top-up with paymentMadeBy='Finance') are counted normally
+      // Finance Debit entries are already skipped in STEP 2
+      if (entry.direction === 'Credit') {
+        balance = balance + entryAmount
+        countedEntries.push({ 
+          type: entry.type, 
+          direction: 'Credit', 
+          amount: entryAmount, 
+          lrNumber: entry.lrNumber, 
+          balance: balance,
+          paymentMadeBy: entry.paymentMadeBy || null
+        })
+      } else {
+        // Regular debit entries (not Finance debits - those are skipped in STEP 2)
+        balance = balance - entryAmount
+        countedEntries.push({ 
+          type: entry.type, 
+          direction: 'Debit', 
+          amount: entryAmount, 
+          lrNumber: entry.lrNumber, 
+          balance: balance 
+        })
+      }
+    })
+    
+    // Debug output
+    console.log('=== Balance Calculation Summary ===')
+    console.log('Agent ID:', agentId)
+    console.log('Agent Name:', agentName)
+    console.log('Total entries from ledger:', agentLedger.length)
+    console.log('Unique entries after deduplication:', finalLedger.length)
+    console.log('Skipped entries:', skippedEntries.length)
+    skippedEntries.forEach(e => console.log('  - Skipped:', e.type, e.amount, e.lrNumber, e.reason))
+    console.log('Counted entries:', countedEntries.length)
+    countedEntries.forEach(e => {
+      const details = e.usedAdvance ? ` (Original: ${e.originalAmount}, Used Advance: ${e.usedAdvance})` : ''
+      console.log(`  - Counted: ${e.type} | ${e.direction} | Amount: ${e.amount}${details} | LR: ${e.lrNumber} | Balance: ${e.balance}`)
+    })
+    console.log('Final balance:', balance)
+    console.log('=== End Summary ===')
+    
+    return balance
+  }, [ledger, trips, isAgent, user])
 
   // Get all agents except current agent for dropdown (restricted to same branch for agents)
   const availableAgents = useMemo(() => {
@@ -698,6 +1075,7 @@ const  Ledger = () => {
                 )}
                 <th className="text-left py-3 px-3 sm:px-4 text-text-secondary font-semibold text-xs sm:text-sm whitespace-nowrap">Direction</th>
                 <th className="text-left py-3 px-3 sm:px-4 text-text-secondary font-semibold text-xs sm:text-sm whitespace-nowrap">Amount</th>
+                <th className="text-left py-3 px-3 sm:px-4 text-text-secondary font-semibold text-xs sm:text-sm whitespace-nowrap">Paid By</th>
                 <th className="text-left py-3 px-3 sm:px-4 text-text-secondary font-semibold text-xs sm:text-sm">Description</th>
               </tr>
             </thead>
@@ -754,14 +1132,50 @@ const  Ledger = () => {
                       </span>
                     </td>
                     <td className="py-3 px-3 sm:px-4 text-text-primary font-semibold text-xs sm:text-sm break-words whitespace-nowrap">
+                      {/* Display corrected amount (already transformed in filteredLedger) */}
                       Rs {(entry.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="py-3 px-3 sm:px-4">
+                      {entry.paymentMadeBy ? (
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
+                          entry.paymentMadeBy === 'Finance' 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {entry.paymentMadeBy}
+                        </span>
+                      ) : entry.type === 'Agent Transfer' ? (
+                        // Extract receiver/sender name from description for Agent Transfer
+                        (() => {
+                          const desc = entry.description || ''
+                          let transferPartner = ''
+                          if (entry.direction === 'Debit') {
+                            // "Payment transferred to {name}"
+                            const match = desc.match(/transferred to (.+)/i)
+                            transferPartner = match ? match[1].trim() : ''
+                          } else if (entry.direction === 'Credit') {
+                            // "Payment received from {name}"
+                            const match = desc.match(/received from (.+)/i)
+                            transferPartner = match ? match[1].trim() : ''
+                          }
+                          return transferPartner ? (
+                            <span className="px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap bg-purple-100 text-purple-800">
+                              {transferPartner}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">-</span>
+                          )
+                        })()
+                      ) : (
+                        <span className="text-xs text-gray-400">-</span>
+                      )}
                     </td>
                     <td className="py-3 px-3 sm:px-4 text-text-primary text-xs sm:text-sm break-words">{entry.description || 'N/A'}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={showAgentColumn && showBankColumn ? 8 : showAgentColumn || showBankColumn ? 7 : 6} className="py-12 text-center text-text-muted text-sm">
+                  <td colSpan={showAgentColumn && showBankColumn ? 9 : showAgentColumn || showBankColumn ? 8 : 7} className="py-12 text-center text-text-muted text-sm">
                     No ledger entries found.
                   </td>
                 </tr>
@@ -787,7 +1201,10 @@ const  Ledger = () => {
                 // Fix: Trip Created should not be counted as Credit
                 const direction = (e.type === 'Trip Created' && e.direction === 'Credit') ? 'Debit' : e.direction
                 return direction === 'Credit'
-              }).reduce((sum, entry) => sum + (entry.amount || 0), 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+              }).reduce((sum, entry) => {
+                // Use corrected amount (already transformed in filteredLedger)
+                return sum + (entry.amount || 0)
+              }, 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
             </p>
           </div>
           <div className="card bg-white border-2 border-gray-200">
@@ -797,7 +1214,10 @@ const  Ledger = () => {
                 // Fix: Trip Created should be counted as Debit
                 const direction = (e.type === 'Trip Created' && e.direction === 'Credit') ? 'Debit' : e.direction
                 return direction === 'Debit'
-              }).reduce((sum, entry) => sum + (entry.amount || 0), 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+              }).reduce((sum, entry) => {
+                // Use corrected amount (already transformed in filteredLedger)
+                return sum + (entry.amount || 0)
+              }, 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
             </p>
           </div>
         </div>

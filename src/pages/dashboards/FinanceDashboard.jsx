@@ -2,37 +2,71 @@ import React, { useMemo, useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useData } from '../../context/DataContext'
 import { reportAPI } from '../../services/api'
-import { FiDollarSign, FiFileText, FiTruck, FiClock } from 'react-icons/fi'
+import { FiDollarSign, FiFileText, FiTruck, FiClock, FiCheckCircle } from 'react-icons/fi'
 import { Link } from 'react-router-dom'
 import LRSearch from '../../components/LRSearch'
 
 const FinanceDashboard = () => {
   const { user } = useAuth()
-  const { trips, ledger } = useData()
+  const { trips, ledger, loadTrips, loadLedger } = useData()
   const [dashboardStats, setDashboardStats] = useState(null)
+
+  // Load data when component mounts
+  useEffect(() => {
+    loadTrips()
+    loadLedger()
+  }, [])
 
   useEffect(() => {
     loadDashboardStats()
-  }, [])
+    // Reload stats every 5 seconds
+    const interval = setInterval(() => {
+      loadDashboardStats()
+    }, 5000)
+    
+    return () => clearInterval(interval)
+  }, [ledger, trips])
 
   const loadDashboardStats = async () => {
     try {
       const stats = await reportAPI.getDashboardStats({})
+      console.log('Dashboard stats received:', stats) // Debug log
+      console.log('midPaymentsToday value:', stats?.midPaymentsToday) // Debug log
+      console.log('Type of midPaymentsToday:', typeof stats?.midPaymentsToday) // Debug log
+      console.log('Full stats object:', JSON.stringify(stats, null, 2)) // Debug log
       setDashboardStats(stats)
     } catch (error) {
       console.error('Error loading dashboard stats:', error)
+      // Set empty stats on error
+      setDashboardStats(null)
     }
   }
 
   const kpiData = useMemo(() => {
     const today = new Date().toISOString().split('T')[0]
     
-    // Use API stats if available, otherwise fallback to local calculation
-    if (dashboardStats) {
+    // Always use API stats if available (even if 0), only fallback if API failed
+    if (dashboardStats !== null && dashboardStats !== undefined) {
+      const apiMidPayments = dashboardStats.midPaymentsToday ?? 0
+      const apiTopUps = dashboardStats.topUpsToday ?? 0
+      const apiActiveTrips = dashboardStats.activeTrips ?? 0
+      const apiLrSheets = dashboardStats.lrSheetsNotReceived ?? 0
+      const apiNormalTrips = dashboardStats.normalTrips ?? 0
+      const apiBulkTrips = dashboardStats.bulkTrips ?? 0
+      const apiBankMovements = dashboardStats.bankMovementsToday ?? 0
+      const apiBankNet = dashboardStats.totalBankNet ?? 0
+      
+      console.log('Using API stats:', {
+        midPaymentsToday: apiMidPayments,
+        topUpsToday: apiTopUps,
+        activeTrips: apiActiveTrips,
+        fullStats: dashboardStats
+      })
+      
       return [
         { 
           title: 'Mid-Payments Today', 
-          value: `Rs ${(dashboardStats.midPaymentsToday || 0).toLocaleString()}`, 
+          value: `Rs ${apiMidPayments.toLocaleString()}`, 
           icon: FiDollarSign, 
           color: 'text-green-600',
           bgColor: 'bg-green-100',
@@ -40,23 +74,39 @@ const FinanceDashboard = () => {
         },
         { 
           title: 'Top-Ups Today', 
-          value: `Rs ${(dashboardStats.topUpsToday || 0).toLocaleString()}`, 
+          value: `Rs ${apiTopUps.toLocaleString()}`, 
           icon: FiDollarSign, 
           color: 'text-blue-600',
           bgColor: 'bg-blue-100',
           link: '/finance/ledger'
         },
         { 
-          title: 'Active Trips', 
-          value: (dashboardStats.activeTrips || 0).toString(), 
+          title: 'Total Active Trips', 
+          value: apiActiveTrips.toString(), 
           icon: FiTruck, 
           color: 'text-green-600',
           bgColor: 'bg-green-100',
           link: '/finance/trips?status=active'
         },
         { 
+          title: 'Total Completed Trips', 
+          value: (dashboardStats.trips?.completed || 0).toString(), 
+          icon: FiCheckCircle, 
+          color: 'text-blue-600',
+          bgColor: 'bg-blue-100',
+          link: '/finance/trips?status=completed'
+        },
+        { 
+          title: 'Total Trips', 
+          value: (dashboardStats.trips?.total || 0).toString(), 
+          icon: FiTruck, 
+          color: 'text-purple-600',
+          bgColor: 'bg-purple-100',
+          link: '/finance/trips'
+        },
+        { 
           title: 'LR Sheets Not Received', 
-          value: (dashboardStats.lrSheetsNotReceived || 0).toString(), 
+          value: apiLrSheets.toString(), 
           icon: FiFileText, 
           color: 'text-yellow-600',
           bgColor: 'bg-yellow-100',
@@ -64,7 +114,7 @@ const FinanceDashboard = () => {
         },
         { 
           title: 'Normal Trips', 
-          value: (dashboardStats.normalTrips || 0).toString(), 
+          value: apiNormalTrips.toString(), 
           icon: FiTruck, 
           color: 'text-purple-600',
           bgColor: 'bg-purple-100',
@@ -72,37 +122,77 @@ const FinanceDashboard = () => {
         },
         { 
           title: 'Bulk Trips', 
-          value: (dashboardStats.bulkTrips || 0).toString(), 
+          value: apiBulkTrips.toString(), 
           icon: FiTruck, 
           color: 'text-indigo-600',
           bgColor: 'bg-indigo-100',
           link: '/finance/trips?type=bulk'
         },
-        { 
-          title: 'Bank-wise Movements Today', 
-          value: `${dashboardStats.bankMovementsToday || 0} banks`, 
-          icon: FiClock, 
-          color: 'text-orange-600',
-          bgColor: 'bg-orange-100',
-          link: '/finance/ledger',
-          subtitle: `Net: Rs ${(dashboardStats.totalBankNet || 0).toLocaleString()}`,
-          bankSummary: dashboardStats.bankSummary
-        },
+        // Bank-wise Movements card removed as per user request
       ]
     }
     
     // Fallback to local calculation
     
-    // Mid-payments today (ledger entries with type containing "Mid" or "Payment")
+    // Mid-payments today - Finance payments only (On-Trip Payment made by Finance)
+    const allFinancePayments = ledger.filter(l => 
+      l.type === 'On-Trip Payment' && l.paymentMadeBy === 'Finance'
+    )
+    console.log('All Finance payments in ledger:', allFinancePayments.length, allFinancePayments.map(p => ({ 
+      amount: p.amount, 
+      lrNumber: p.lrNumber, 
+      date: p.date, 
+      createdAt: p.createdAt,
+      paymentMadeBy: p.paymentMadeBy
+    })))
+    
     const midPaymentsToday = ledger.filter(l => {
-      const entryDate = l.date || l.createdAt?.split('T')[0]
-      return entryDate === today && (l.type?.includes('Payment') || l.type?.includes('Mid'))
+      // Handle date comparison - check both date field and createdAt
+      let entryDate = ''
+      if (l.date) {
+        try {
+          entryDate = new Date(l.date).toISOString().split('T')[0]
+        } catch (e) {
+          entryDate = l.date.toString().split('T')[0]
+        }
+      } else if (l.createdAt) {
+        entryDate = l.createdAt.toString().split('T')[0]
+      }
+      
+      const isToday = entryDate === today
+      if (!isToday) return false
+      
+      // Check if it's a Finance payment
+      // Method 1: Direct paymentMadeBy field
+      if (l.type === 'On-Trip Payment' && l.paymentMadeBy === 'Finance') {
+        console.log('Found Finance payment today:', l.amount, l.lrNumber, entryDate)
+        return true
+      }
+      
+      // Method 2: Check if there's a matching Finance Top-up entry (Finance payments create both Top-up and On-Trip Payment)
+      if (l.type === 'On-Trip Payment') {
+        const hasMatchingFinanceTopUp = ledger.some(topup => 
+          topup.type === 'Top-up' && 
+          topup.paymentMadeBy === 'Finance' &&
+          topup.amount === l.amount &&
+          (topup.lrNumber === l.lrNumber || topup.tripId === l.tripId) &&
+          Math.abs(new Date(topup.date || topup.createdAt) - new Date(l.date || l.createdAt)) < 120000 // Within 2 minutes
+        )
+        if (hasMatchingFinanceTopUp) {
+          console.log('Found Finance payment via Top-up match:', l.amount, l.lrNumber)
+          return true
+        }
+      }
+      
+      return false
     }).reduce((sum, e) => sum + (e.amount || 0), 0)
     
-    // Top-ups today
+    console.log('Mid-payments today (frontend calculation):', midPaymentsToday, 'Today:', today)
+    
+    // Top-ups today - All top-ups including Finance top-ups
     const topUpsToday = ledger.filter(l => {
-      const entryDate = l.date || l.createdAt?.split('T')[0]
-      return entryDate === today && l.type?.includes('Top-up')
+      const entryDate = l.date ? new Date(l.date).toISOString().split('T')[0] : (l.createdAt?.split('T')[0] || '')
+      return entryDate === today && (l.type === 'Top-up' || l.type === 'Virtual Top-up')
     }).reduce((sum, e) => sum + (e.amount || 0), 0)
     
     const activeTrips = trips.filter(t => t.status === 'Active').length
@@ -182,24 +272,15 @@ const FinanceDashboard = () => {
         bgColor: 'bg-purple-100',
         link: '/finance/trips?type=regular'
       },
-      { 
-        title: 'Bulk Trips', 
-        value: bulkTrips.toString(), 
-        icon: FiTruck, 
-        color: 'text-indigo-600',
-        bgColor: 'bg-indigo-100',
-        link: '/finance/trips?type=bulk'
-      },
-      { 
-        title: 'Bank-wise Movements Today', 
-        value: `${bankMovementsToday} banks`, 
-        icon: FiClock, 
-        color: 'text-orange-600',
-        bgColor: 'bg-orange-100',
-        link: '/finance/ledger',
-        subtitle: `Net: Rs ${totalBankNet.toLocaleString()}`,
-        bankSummary: bankSummary
-      },
+        { 
+          title: 'Bulk Trips', 
+          value: bulkTrips.toString(), 
+          icon: FiTruck, 
+          color: 'text-indigo-600',
+          bgColor: 'bg-indigo-100',
+          link: '/finance/trips?type=bulk'
+        },
+        // Bank-wise Movements card removed as per user request
     ]
   }, [trips, ledger, dashboardStats])
 
@@ -246,46 +327,7 @@ const FinanceDashboard = () => {
         })}
       </div>
 
-      {/* Bank-wise Summary Detail Card */}
-      {(() => {
-        const bankWidget = kpiData.find(k => k.bankSummary)
-        const bankSummaryData = bankWidget?.bankSummary || {}
-        const bankSummaryArray = Object.values(bankSummaryData)
-        
-        if (bankSummaryArray.length === 0) return null
-        
-        return (
-          <div className="card mb-6 sm:mb-8">
-            <h2 className="text-lg sm:text-xl font-semibold text-text-primary mb-4">Bank-wise Movement Summary (Today)</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full table-auto">
-                <thead>
-                  <tr className="border-b-2 border-secondary">
-                    <th className="text-left py-2 sm:py-3 px-2 sm:px-4 text-text-secondary font-medium text-xs sm:text-sm">Bank</th>
-                    <th className="text-right py-2 sm:py-3 px-2 sm:px-4 text-text-secondary font-medium text-xs sm:text-sm">Credit</th>
-                    <th className="text-right py-2 sm:py-3 px-2 sm:px-4 text-text-secondary font-medium text-xs sm:text-sm">Debit</th>
-                    <th className="text-right py-2 sm:py-3 px-2 sm:px-4 text-text-secondary font-medium text-xs sm:text-sm">Net Amount</th>
-                    <th className="text-right py-2 sm:py-3 px-2 sm:px-4 text-text-secondary font-medium text-xs sm:text-sm">Transactions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bankSummaryArray.map((bank, idx) => (
-                    <tr key={idx} className="border-b-2 border-secondary hover:bg-background transition-colors">
-                      <td className="py-3 sm:py-4 px-2 sm:px-4 text-text-primary text-xs sm:text-sm font-medium">{bank.bank}</td>
-                      <td className="py-3 sm:py-4 px-2 sm:px-4 text-text-primary text-xs sm:text-sm text-right">Rs {bank.credit.toLocaleString()}</td>
-                      <td className="py-3 sm:py-4 px-2 sm:px-4 text-text-primary text-xs sm:text-sm text-right">Rs {bank.debit.toLocaleString()}</td>
-                      <td className={`py-3 sm:py-4 px-2 sm:px-4 text-xs sm:text-sm text-right font-semibold ${bank.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        Rs {bank.net.toLocaleString()}
-                      </td>
-                      <td className="py-3 sm:py-4 px-2 sm:px-4 text-text-primary text-xs sm:text-sm text-right">{bank.count}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )
-      })()}
+      {/* Bank-wise Summary Detail Card - Removed as per user request */}
     </div>
   )
 }

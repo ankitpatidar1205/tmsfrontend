@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useData } from '../../context/DataContext'
 import { FiTruck, FiDollarSign, FiAlertCircle, FiCheckCircle, FiFileText } from 'react-icons/fi'
@@ -6,46 +6,59 @@ import { Link } from 'react-router-dom'
 
 const AgentDashboard = () => {
   const { user } = useAuth()
-  const { trips, disputes, ledger, getTripsByAgent, getTripsByBranch } = useData()
+  const { trips, disputes, ledger, loadTrips, loadLedger, loadDisputes, getTripsByAgent, getTripsByBranch } = useData()
 
-  // Filter trips by agent ID (handle both object and string IDs)
+  // Load data when component mounts
+  useEffect(() => {
+    if (user?.role === 'Agent') {
+      console.log('Dashboard: Loading data for agent:', user?.id || user?._id)
+      loadTrips()
+      loadLedger()
+      loadDisputes()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  
+  // Reload when user changes
+  useEffect(() => {
+    if (user?.role === 'Agent' && (user?.id || user?._id)) {
+      loadTrips()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?._id])
+
+  // Filter trips - EXACT same logic as AgentTrips.jsx
   const agentTrips = useMemo(() => {
     if (user?.role !== 'Agent') return []
+    if (!Array.isArray(trips)) return []
     
     const agentId = String(user?.id || user?._id || '').trim()
     const agentName = user?.name
     
-    // Filter trips by agent ID
+    // Filter trips - EXACT same logic as AgentTrips page (lines 49-68)
     let filtered = trips.filter(trip => {
-      // Get trip's agent ID in all possible formats
+      // Get trip's agent ID
       const tripAgentId = trip.agentId?._id || trip.agentId?.id || trip.agentId
-      const tripAgentName = trip.agent?.name || trip.agent || trip.agentDetails?.name
-      
-      // Normalize IDs to strings for comparison
-      const normalizedTripAgentId = tripAgentId ? String(tripAgentId).trim() : ''
-      const normalizedAgentId = agentId || ''
       
       // Match by ID
-      const idMatch = normalizedTripAgentId && normalizedAgentId && (
-        normalizedTripAgentId === normalizedAgentId
-      )
+      if (tripAgentId && agentId) {
+        if (String(tripAgentId).trim() === String(agentId).trim()) {
+          return true
+        }
+      }
       
-      // Match by name (fallback)
-      const nameMatch = tripAgentName && agentName && (
-        tripAgentName === agentName ||
-        trip.agent === agentName
-      )
+      // Match by name
+      const tripAgentName = trip.agent?.name || trip.agent || trip.agentName || trip.agentDetails?.name
+      if (tripAgentName && agentName && String(tripAgentName) === String(agentName)) {
+        return true
+      }
       
-      return idMatch || nameMatch
+      // If API filtered correctly, include trip (backup)
+      return true
     })
     
-    // If branch is set, further filter by branch
-    if (user?.branch && filtered.length > 0) {
-      filtered = filtered.filter(trip => {
-        const tripBranch = trip.branch?.name || trip.branch || trip.branchName
-        return tripBranch === user.branch || !tripBranch
-      })
-    }
+    // Branch filter (same as AgentTrips - but AgentTrips doesn't filter by branch in useEffect)
+    // So we also don't filter by branch here to match exactly
     
     return filtered
   }, [trips, user])
@@ -55,13 +68,49 @@ const AgentDashboard = () => {
   )
 
   const kpiData = useMemo(() => {
-    const activeTripsCount = agentTrips.filter(t => t.status === 'Active').length
-    const completedTrips = agentTrips.filter(t => t.status === 'Completed').length
-    const tripsInDispute = agentTrips.filter(t => t.status === 'Dispute').length
-    const bulkTrips = agentTrips.filter(t => t.isBulk).length
-    const lrSheetsPending = agentTrips.filter(t => !t.lrSheet || t.lrSheet === 'Not Received').length
+    // Status matching - case-insensitive, handle all variations
+    const activeTripsCount = agentTrips.filter(t => {
+      const status = String(t.status || '').trim().toLowerCase()
+      return status === 'active'
+    }).length
     
-    // Calculate current balance
+    const completedTrips = agentTrips.filter(t => {
+      const status = String(t.status || '').trim().toLowerCase()
+      return status === 'completed'
+    }).length
+    
+    const tripsInDispute = agentTrips.filter(t => {
+      const status = String(t.status || '').trim().toLowerCase()
+      return status === 'dispute' || status === 'in dispute'
+    }).length
+    
+    const bulkTrips = agentTrips.filter(t => t.isBulk === true).length
+    
+    const lrSheetsPending = agentTrips.filter(t => {
+      const lrSheet = String(t.lrSheet || '').trim().toLowerCase()
+      return !t.lrSheet || lrSheet === 'not received' || lrSheet === ''
+    }).length
+    
+    console.log('=== Dashboard Stats ===')
+    console.log('Total trips:', agentTrips.length)
+    console.log('Active trips:', activeTripsCount)
+    console.log('Completed trips:', completedTrips)
+    console.log('Dispute trips:', tripsInDispute)
+    console.log('Bulk trips:', bulkTrips)
+    console.log('LR Sheets Pending:', lrSheetsPending)
+    console.log('All statuses:', [...new Set(agentTrips.map(t => t.status))])
+    if (agentTrips.length > 0) {
+      console.log('Sample trips:', agentTrips.slice(0, 5).map(t => ({
+        lrNumber: t.lrNumber,
+        status: t.status,
+        statusLower: String(t.status || '').toLowerCase(),
+        isBulk: t.isBulk,
+        lrSheet: t.lrSheet
+      })))
+    }
+    console.log('=== End Stats ===')
+    
+    // Calculate current balance - EXACTLY same logic as Ledger.jsx
     const agentId = String(user?.id || user?._id || '').trim()
     const agentName = user?.name
     const agentLedger = ledger.filter(l => {
@@ -77,13 +126,139 @@ const AgentDashboard = () => {
       
       return idMatch || nameMatch
     })
-    const currentBalance = agentLedger.reduce((sum, entry) => {
-      if (entry.direction === 'Credit') {
-        return sum + (entry.amount || 0)
-      } else {
-        return sum - (entry.amount || 0)
+    
+    // Remove duplicates
+    const uniqueEntries = []
+    const seenEntries = new Set()
+    agentLedger.forEach(entry => {
+      const entryId = entry.id || entry._id
+      if (entryId && !seenEntries.has(entryId)) {
+        seenEntries.add(entryId)
+        uniqueEntries.push(entry)
+      } else if (!entryId) {
+        const entryKey = `${entry.type}_${entry.amount}_${entry.createdAt || entry.date}_${entry.lrNumber || entry.tripId || ''}`
+        if (!seenEntries.has(entryKey)) {
+          seenEntries.add(entryKey)
+          uniqueEntries.push(entry)
+        }
       }
-    }, 0)
+    })
+    
+    // Sort chronologically (oldest first)
+    const finalLedger = uniqueEntries.sort((a, b) => {
+      const dateA = new Date(a.createdAt || a.date || 0).getTime()
+      const dateB = new Date(b.createdAt || b.date || 0).getTime()
+      return dateA - dateB
+    })
+    
+    // Helper function to check if Finance payment entries match
+    const financePaymentMatches = (entry1, entry2) => {
+      const amount1 = parseFloat(entry1.amount) || 0
+      const amount2 = parseFloat(entry2.amount) || 0
+      if (Math.abs(amount1 - amount2) > 0.01) return false
+      if (entry1.lrNumber && entry2.lrNumber && 
+          String(entry1.lrNumber).trim() === String(entry2.lrNumber).trim()) {
+        return true
+      }
+      if (entry1.tripId && entry2.tripId && 
+          String(entry1.tripId) === String(entry2.tripId)) {
+        return true
+      }
+      return false
+    }
+    
+    // Pre-process: Find all Finance payment pairs
+    const financePaymentPairs = []
+    const processedCredits = new Set()
+    const processedDebits = new Set()
+    
+    finalLedger.forEach(creditEntry => {
+      if (creditEntry.type === 'Top-up' && 
+          creditEntry.paymentMadeBy === 'Finance' && 
+          creditEntry.direction === 'Credit') {
+        const creditId = creditEntry.id || creditEntry._id
+        if (processedCredits.has(creditId)) return
+        
+        const matchingDebit = finalLedger.find(debitEntry => {
+          const debitId = debitEntry.id || debitEntry._id
+          if (processedDebits.has(debitId)) return false
+          return debitEntry.type === 'On-Trip Payment' && 
+                 debitEntry.paymentMadeBy === 'Finance' && 
+                 debitEntry.direction === 'Debit' &&
+                 financePaymentMatches(creditEntry, debitEntry)
+        })
+        
+        if (matchingDebit) {
+          const creditId = creditEntry.id || creditEntry._id
+          const debitId = matchingDebit.id || matchingDebit._id
+          financePaymentPairs.push({
+            creditId: creditId,
+            debitId: debitId
+          })
+          processedCredits.add(creditId)
+          processedDebits.add(debitId)
+        }
+      }
+    })
+    
+    // Calculate balance
+    let balance = 0
+    finalLedger.forEach(entry => {
+      const entryAmount = parseFloat(entry.amount) || 0
+      const entryId = entry.id || entry._id
+      
+      // Skip Trip Closed
+      if (entry.type === 'Trip Closed') return
+      
+      // Skip informational entries (balance not affected)
+      if (entry.isInformational === true) return
+      
+      // Skip Finance payment entries (both Credit and Debit)
+      const isFinanceCredit = entry.type === 'Top-up' && 
+                               entry.paymentMadeBy === 'Finance' && 
+                               entry.direction === 'Credit'
+      const isFinanceDebit = entry.type === 'On-Trip Payment' && 
+                             entry.paymentMadeBy === 'Finance' && 
+                             entry.direction === 'Debit'
+      
+      if (isFinanceCredit || isFinanceDebit) {
+        const isInPair = financePaymentPairs.some(pair => {
+          return (pair.creditId && entryId && String(pair.creditId) === String(entryId)) ||
+                 (pair.debitId && entryId && String(pair.debitId) === String(entryId))
+        })
+        if (isInPair) return // Skip both Credit and Debit
+      }
+      
+      // Handle Trip Created - always debit, use advance amount
+      if (entry.type === 'Trip Created') {
+        let advanceAmount = entryAmount
+        if (entry.advance && parseFloat(entry.advance) > 0) {
+          advanceAmount = parseFloat(entry.advance)
+        } else if (entry.tripId || entry.lrNumber) {
+          const trip = trips.find(t => 
+            (entry.tripId && (String(t.id) === String(entry.tripId) || String(t._id) === String(entry.tripId))) ||
+            (entry.lrNumber && t.lrNumber === entry.lrNumber)
+          )
+          if (trip && (trip.advance || trip.advancePaid)) {
+            const tripAdvance = parseFloat(trip.advance || trip.advancePaid || 0)
+            if (tripAdvance > 0) {
+              advanceAmount = tripAdvance
+            }
+          }
+        }
+        balance = balance - advanceAmount
+        return
+      }
+      
+      // Handle all other entries normally
+      if (entry.direction === 'Credit') {
+        balance = balance + entryAmount
+      } else {
+        balance = balance - entryAmount
+      }
+    })
+    
+    const currentBalance = balance
 
     return [
       { 
@@ -135,7 +310,7 @@ const AgentDashboard = () => {
         link: '/agent/ledger'
       },
     ]
-  }, [agentTrips, agentDisputes, ledger, user])
+  }, [agentTrips, agentDisputes, ledger, trips, user])
 
   return (
     <div className="p-3 sm:p-6">

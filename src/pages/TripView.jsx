@@ -67,6 +67,13 @@ const TripView = () => {
             others: tripFromArray.deductions?.others || '',
             othersReason: tripFromArray.deductions?.othersReason || '',
           })
+          // Pre-fill agent for Finance users
+          if (user?.role === 'Finance') {
+            const tripAgentId = tripFromArray.agentId?._id || tripFromArray.agentId?.id || tripFromArray.agentId
+            if (tripAgentId) {
+              setPaymentForm(prev => ({ ...prev, agentId: tripAgentId }))
+            }
+          }
           setLoading(false)
           return
         }
@@ -85,6 +92,13 @@ const TripView = () => {
             others: tripData.deductions?.others || '',
             othersReason: tripData.deductions?.othersReason || '',
           })
+          // Pre-fill agent for Finance users
+          if (user?.role === 'Finance') {
+            const tripAgentId = tripData.agentId?._id || tripData.agentId?.id || tripData.agentId
+            if (tripAgentId) {
+              setPaymentForm(prev => ({ ...prev, agentId: tripAgentId }))
+            }
+          }
           setLoading(false)
         } else {
           setLoading(false)
@@ -182,18 +196,22 @@ const TripView = () => {
     }
 
     try {
-      // For Finance, use the selected agent; for Agent, use current trip's agent
+      // IMPORTANT: Payment should be deducted from the agent who is making the payment, NOT the trip creator
+      // - For Finance: Use selected agent from dropdown (agentId)
+      // - For Agent: Use logged-in agent's ID (userId) - the agent making the payment
       const targetAgentId = user?.role === 'Finance' && paymentForm.agentId 
         ? paymentForm.agentId
-        : (trip.agentId?._id || trip.agentId?.id || trip.agentId)
+        : (user?.id || user?._id) // Agent making the payment (logged-in user)
 
       const tripId = trip.id || trip._id
       await addOnTripPayment(tripId, {
         amount: parseFloat(paymentForm.amount),
         reason: paymentForm.reason,
-        agentId: targetAgentId,
+        agentId: targetAgentId, // Agent whose account will be debited
         mode: paymentForm.mode,
         bank: paymentForm.bank || (paymentForm.mode === 'Cash' ? 'Cash' : ''),
+        userRole: user?.role, // Pass user role to backend
+        userId: user?.id || user?._id, // Pass user ID to backend (logged-in agent making payment)
       })
 
       toast.success('Payment added successfully')
@@ -1077,6 +1095,7 @@ const TripView = () => {
                     <tr className="border-b-2 border-secondary">
                       <th className="text-left py-2 px-2 text-text-secondary font-medium">Amount</th>
                       <th className="text-left py-2 px-2 text-text-secondary font-medium">Reason</th>
+                      <th className="text-left py-2 px-2 text-text-secondary font-medium">Paid By</th>
                       <th className="text-left py-2 px-2 text-text-secondary font-medium">Date/Time</th>
                     </tr>
                   </thead>
@@ -1085,6 +1104,15 @@ const TripView = () => {
                       <tr key={payment.id || payment._id || `payment-${index}`} className="border-b border-secondary">
                         <td className="py-2 px-2 text-text-primary font-medium text-xs sm:text-sm break-words">Rs {(parseFloat(payment.amount) || 0).toLocaleString()}</td>
                         <td className="py-2 px-2 text-text-primary text-xs break-words">{payment.reason || 'N/A'}</td>
+                        <td className="py-2 px-2 text-text-primary text-xs break-words">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            payment.addedByRole === 'Finance' 
+                              ? 'bg-blue-100 text-blue-800' 
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {payment.addedByRole === 'Finance' ? 'Finance' : 'Agent'}
+                          </span>
+                        </td>
                         <td className="py-2 px-2 text-text-primary text-xs break-words">
                           {payment.createdAt ? new Date(payment.createdAt).toLocaleString('en-IN') : 'N/A'}
                         </td>

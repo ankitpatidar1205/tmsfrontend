@@ -274,6 +274,72 @@ const FinanceReports = () => {
     }
   }
 
+  const handleExportPDF = () => {
+    if (filteredData.length === 0) {
+      toast.error('No data to export', {
+        position: 'top-right',
+        autoClose: 3000,
+      })
+      return
+    }
+
+    const columns = getTableColumns()
+    const headers = columns.map(col => col.label)
+    
+    let htmlContent = `
+      <html>
+        <head>
+          <title>${reportType} Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+            th { background-color: #f3f4f6; padding: 10px; text-align: left; border: 1px solid #ddd; font-weight: bold; }
+            td { padding: 8px; border: 1px solid #ddd; }
+            h1 { color: #333; margin-bottom: 10px; }
+            p { color: #666; margin-bottom: 20px; }
+            @media print { @page { margin: 1cm; } }
+          </style>
+        </head>
+        <body>
+          <h1>${reportType} Report</h1>
+          <p>Generated on: ${new Date().toLocaleString('en-IN')}</p>
+          <table>
+            <thead>
+              <tr>
+                ${headers.map(h => `<th>${h}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredData.map(row => `
+                <tr>
+                  ${columns.map(col => {
+                    const value = row[col.key]
+                    const displayValue = typeof value === 'number' 
+                      ? value.toLocaleString('en-IN', { maximumFractionDigits: 2 })
+                      : (value || '')
+                    return `<td>${displayValue}</td>`
+                  }).join('')}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `
+    
+    const printWindow = window.open('', '_blank')
+    printWindow.document.write(htmlContent)
+    printWindow.document.close()
+    setTimeout(() => {
+      printWindow.print()
+    }, 250)
+    
+    toast.success('PDF export initiated!', {
+      position: 'top-right',
+      autoClose: 2000,
+    })
+  }
+
   const handleExportCSV = () => {
     if (filteredData.length === 0) {
       toast.error('No data to export', {
@@ -333,13 +399,22 @@ const FinanceReports = () => {
           <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-text-primary mb-1 sm:mb-2">Reports & Analytics</h1>
           <p className="text-xs sm:text-sm text-text-secondary">Generate financial reports and export as CSV</p>
         </div>
-        <button
-          onClick={handleExportCSV}
-          className="btn-3d-primary flex items-center justify-center gap-2 px-4 py-2 text-sm sm:text-base whitespace-nowrap"
-        >
-          <FiDownload size={18} className="sm:w-5 sm:h-5" />
-          <span>Export CSV</span>
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleExportCSV}
+            className="btn-3d-primary flex items-center justify-center gap-2 px-4 py-2 text-sm sm:text-base whitespace-nowrap"
+          >
+            <FiDownload size={18} className="sm:w-5 sm:h-5" />
+            <span>Export CSV</span>
+          </button>
+          <button
+            onClick={handleExportPDF}
+            className="btn-3d-secondary flex items-center justify-center gap-2 px-4 py-2 text-sm sm:text-base whitespace-nowrap"
+          >
+            <FiDownload size={18} className="sm:w-5 sm:h-5" />
+            <span>Export PDF</span>
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
