@@ -1,12 +1,14 @@
-import React, { useMemo, useEffect } from 'react'
+import React, { useMemo, useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useData } from '../../context/DataContext'
-import { FiTruck, FiDollarSign, FiAlertCircle, FiCheckCircle, FiFileText } from 'react-icons/fi'
+import { FiTruck, FiDollarSign, FiAlertCircle, FiCheckCircle, FiFileText, FiCalendar } from 'react-icons/fi'
 import { Link } from 'react-router-dom'
 
 const AgentDashboard = () => {
   const { user } = useAuth()
   const { trips, disputes, ledger, loadTrips, loadLedger, loadDisputes, getTripsByAgent, getTripsByBranch } = useData()
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
 
   // Load data when component mounts
   useEffect(() => {
@@ -60,8 +62,22 @@ const AgentDashboard = () => {
     // Branch filter (same as AgentTrips - but AgentTrips doesn't filter by branch in useEffect)
     // So we also don't filter by branch here to match exactly
     
+    // Filter by date range
+    if (startDate) {
+      filtered = filtered.filter(t => {
+        const tripDate = new Date(t.date).toISOString().split('T')[0]
+        return tripDate >= startDate
+      })
+    }
+    if (endDate) {
+      filtered = filtered.filter(t => {
+        const tripDate = new Date(t.date).toISOString().split('T')[0]
+        return tripDate <= endDate
+      })
+    }
+    
     return filtered
-  }, [trips, user])
+  }, [trips, user, startDate, endDate])
   const agentDisputes = useMemo(() => 
     disputes.filter(d => (d.agentId === user?.id || d.agentId === user?._id) || d.agent === user?.name),
     [disputes, user]
@@ -348,6 +364,49 @@ const AgentDashboard = () => {
             </div>
           </div>
         )}
+        
+        {/* Date Range Filters */}
+        <div className="card p-4 mb-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="flex items-center gap-2 text-text-secondary">
+              <FiCalendar size={18} />
+              <span className="text-sm font-medium">Date Range Filter:</span>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 flex-1">
+              <div className="flex-1 sm:flex-none">
+                <label className="block text-xs text-text-secondary mb-1">From Date</label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="input-field-3d w-full sm:w-auto"
+                />
+              </div>
+              <div className="flex-1 sm:flex-none">
+                <label className="block text-xs text-text-secondary mb-1">To Date</label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="input-field-3d w-full sm:w-auto"
+                />
+              </div>
+              {(startDate || endDate) && (
+                <div className="flex items-end">
+                  <button
+                    onClick={() => {
+                      setStartDate('')
+                      setEndDate('')
+                    }}
+                    className="btn-3d-secondary px-4 py-2 text-sm"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* KPI Cards */}

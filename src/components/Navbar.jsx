@@ -1,9 +1,8 @@
 import React, { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { FiSearch, FiBell, FiSettings, FiUser, FiPlus } from 'react-icons/fi'
+import { FiSearch, FiUser, FiPlus } from 'react-icons/fi'
 
 const Navbar = ({ onAddOrderClick }) => {
-  const [showNotifications, setShowNotifications] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const { user, logout } = useAuth()
 
@@ -24,32 +23,6 @@ const Navbar = ({ onAddOrderClick }) => {
 
         {/* Right Side Actions */}
         <div className="flex items-center gap-4">
-          {/* Notifications */}
-          <div className="relative">
-            <button
-              onClick={() => setShowNotifications(!showNotifications)}
-              className="relative p-2 text-secondary hover:text-white hover:bg-primary rounded-lg transition-all shadow-3d hover:shadow-3d-hover active:shadow-3d-active transform hover:-translate-y-0.5 active:translate-y-0"
-            >
-              <FiBell size={20} />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-            </button>
-            {showNotifications && (
-              <div className="absolute right-0 mt-2 w-80 bg-background-light border-2 border-secondary rounded-lg shadow-3d z-50">
-                <div className="p-4 border-b-2 border-secondary">
-                  <h3 className="text-text-primary font-semibold">Notifications</h3>
-                </div>
-                <div className="p-4">
-                  <p className="text-text-secondary text-sm">No new notifications</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Settings */}
-          <button className="p-2 text-secondary hover:text-white hover:bg-primary rounded-lg transition-all shadow-3d hover:shadow-3d-hover active:shadow-3d-active transform hover:-translate-y-0.5 active:translate-y-0">
-            <FiSettings size={20} />
-          </button>
-
           {/* Profile */}
           <div className="relative">
             <button

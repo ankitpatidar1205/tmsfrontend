@@ -80,6 +80,9 @@ const  Ledger = () => {
           
           // Always include Trip Created entries (advance payments) for this agent
           if (entry.type === 'Trip Created') return true
+
+          // Always include Dispute Correction entries (Freight/Advance) for this agent
+          if (entry.type === 'Dispute - Freight Correction' || entry.type === 'Dispute - Advance Correction') return true
           
           // Always include Finance payment entries (On-Trip Payment and Top-up with paymentMadeBy='Finance')
           // Finance payments should be visible to the agent they're made for
@@ -91,6 +94,34 @@ const  Ledger = () => {
               (entry.agentId === user?.id || entry.agentId === user?._id || entry.agent === user?.name) &&
               entry.isInformational !== true) {
             return true
+          }
+          
+          // Always include Settlement entries (Closing Deductions) where this agent added them
+          // Check by agentId (entry owner) or deductionsAddedBy (who added the deductions)
+          if (entry.type === 'Settlement') {
+            // Get entry's agentId (who owns this ledger entry)
+            const settlementEntryAgentId = entry.agentId?._id || entry.agentId?.id || entry.agentId
+            const settlementEntryAgentIdStr = settlementEntryAgentId ? String(settlementEntryAgentId).trim() : ''
+            
+            // Get deductionsAddedBy (who added the closing deductions)
+            const settlementDeductionsAddedById = entry.deductionsAddedBy?._id || entry.deductionsAddedBy?.id || entry.deductionsAddedBy
+            const settlementDeductionsAddedByIdStr = settlementDeductionsAddedById ? String(settlementDeductionsAddedById).trim() : ''
+            
+            // Match by entry's agentId (entry owner - this is the agent whose balance is affected)
+            if (agentIdStr && settlementEntryAgentIdStr && settlementEntryAgentIdStr === agentIdStr) {
+              return true
+            }
+            
+            // Match by deductionsAddedBy (who added the deductions - they should see this entry)
+            if (agentIdStr && settlementDeductionsAddedByIdStr && settlementDeductionsAddedByIdStr === agentIdStr) {
+              return true
+            }
+            
+            // Match by name (fallback)
+            const settlementEntryAgentName = entry.agent?.name || entry.agent
+            if (agentName && settlementEntryAgentName && String(settlementEntryAgentName).trim() === String(agentName).trim()) {
+              return true
+            }
           }
           
           // Check if tripId matches any branch trip (convert to string for comparison)
@@ -1187,13 +1218,7 @@ const  Ledger = () => {
 
       {/* Summary Card */}
       {filteredLedger.length > 0 && (
-        <div className="mt-4 sm:mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-          <div className="card bg-white border-2 border-gray-200">
-            <h3 className="text-xs sm:text-sm font-medium text-text-secondary mb-2">Total Amount</h3>
-            <p className="text-lg sm:text-xl lg:text-2xl font-bold text-text-primary break-words">
-              Rs {filteredLedger.reduce((sum, entry) => sum + (entry.amount || 0), 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-            </p>
-          </div>
+        <div className="mt-4 sm:mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           <div className="card bg-white border-2 border-gray-200">
             <h3 className="text-xs sm:text-sm font-medium text-text-secondary mb-2">Total Credits</h3>
             <p className="text-lg sm:text-xl lg:text-2xl font-bold text-green-600 break-words">

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
-import { FiArrowLeft, FiUpload, FiX, FiAlertCircle, FiCheckCircle, FiFile, FiEye } from 'react-icons/fi'
+import { FiArrowLeft, FiUpload, FiX, FiAlertCircle, FiCheckCircle, FiFile, FiEye, FiInfo } from 'react-icons/fi'
 import { toast } from 'react-toastify'
 import BaseUrl from '../utils/BaseUrl'
 
@@ -10,14 +10,14 @@ const TripView = () => {
   const { id } = useParams()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { trips, getTripById, updateTrip, addOnTripPayment, updateDeductions, addAttachment, deleteAttachment, closeTrip, addDispute, getAgents, disputes, loadTrips } = useData()
+  const { trips, getTripById, updateTrip, addOnTripPayment, updateDeductions, addAttachment, deleteAttachment, closeTrip, addDispute, getAgents, disputes, loadTrips, loadLedger, ledger, agents } = useData()
   
   const [trip, setTrip] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showDisputeModal, setShowDisputeModal] = useState(false)
   const [showCloseModal, setShowCloseModal] = useState(false)
   const [disputeForm, setDisputeForm] = useState({
-    type: '',
+    type: 'DEFICIT (Freight Kam Enter Hua)',
     reason: '',
   })
   
@@ -41,6 +41,14 @@ const TripView = () => {
     mode: 'Cash', // Cash or Online
     bank: '',
   })
+
+  // Final amount payment form (for closing trip when balance > 0)
+  const [finalAmountForm, setFinalAmountForm] = useState({
+    amount: '',
+    mode: 'Cash',
+    bank: '',
+  })
+  const [showFinalAmountModal, setShowFinalAmountModal] = useState(false)
 
   // Load trip on mount and when trips data changes
   useEffect(() => {
@@ -131,34 +139,135 @@ const TripView = () => {
   const canReplaceAttachments = user?.role === 'Admin' || user?.role === 'Finance' // Only Finance/Admin can replace
   const canViewAttachments = true // All roles can view attachments
   const canAddPayments = user?.role === 'Agent' || user?.role === 'Finance'
-  // NEW REQUIREMENT: Strict dispute blocking - Close Trip disabled when In Dispute
-  // Admin can close any trip (including force close), Agent can only close Active trips without disputes
-  const canCloseTrip = (user?.role === 'Admin' && trip?.status !== 'Completed') || 
-                       (user?.role === 'Agent' && trip?.status === 'Active' && trip?.status !== 'In Dispute' && !hasOpenDispute)
   
-  // Finance cannot close trips (NEW REQUIREMENT)
-  const financeCanClose = false // Finance cannot close trips
-  
-  // For Closing Deductions: Agent can edit if trip is Active (even if it was previously Completed/Dispute and is now Active)
-  const canEditDeductions = user?.role === 'Agent' && trip?.status !== 'Completed'
-
-  // Calculate totals
+  // Calculate totals FIRST (before using finalBalance)
+  // New logic: Cess, Kata, Excess Tonnage, Halting, Expenses, Others are ADDED
+  // Beta is SUBTRACTED
   const initialBalance = trip ? ((trip.freight || trip.freightAmount || 0) - (trip.advance || trip.advancePaid || 0)) : 0
-  // Use current deductions state for Active trips (real-time calculation), trip.deductions for Completed trips
-  const currentDeductionsTotal = Object.entries(deductions).reduce((sum, [key, val]) => {
-    if (key === 'othersReason') return sum
-    return sum + (parseFloat(val) || 0)
-  }, 0)
-  const totalDeductions = trip?.status === 'Completed' 
-    ? (trip.deductions ? Object.entries(trip.deductions).reduce((sum, [key, val]) => {
-        if (key === 'othersReason') return sum
-        return sum + (parseFloat(val) || 0)
-      }, 0) : 0)
-    : currentDeductionsTotal
-  const totalPayments = trip?.onTripPayments ? trip.onTripPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) : 0
-  const finalBalance = initialBalance - totalDeductions - totalPayments
+  
+  // Get deductions (from state for Active trips, from trip for Completed trips)
+  const currentDeductions = trip?.status === 'Completed' ? (trip.deductions || {}) : deductions
+  
+  // Calculate total additions (Cess, Kata, Excess Tonnage, Halting, Expenses, Others)
+  const totalAdditions = (parseFloat(currentDeductions.cess) || 0) + 
+                        (parseFloat(currentDeductions.kata) || 0) + 
+                        (parseFloat(currentDeductions.excessTonnage) || 0) + 
+                        (parseFloat(currentDeductions.halting) || 0) + 
+                        (parseFloat(currentDeductions.expenses) || 0) + 
+                        (parseFloat(currentDeductions.others) || 0)
+  
+  // Beta is subtracted
+  const betaAmount = parseFloat(currentDeductions.beta) || 0
+  
+  // Separate Finance payments from Agent payments (matching backend logic)
+  // Finance payments are already credited to agent wallet, so they should INCREASE final balance
+  const agentPayments = trip?.onTripPayments 
+    ? trip.onTripPayments
+        .filter(p => p.addedByRole !== 'Finance')
+        .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+    : 0
+  
+  const financePayments = trip?.onTripPayments 
+    ? trip.onTripPayments
+        .filter(p => p.addedByRole === 'Finance')
+        .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+    : 0
+  
+  // Total payments for display purposes
+  const totalPayments = trip?.onTripPayments 
+    ? trip.onTripPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) 
+    : 0
+  
+  // Final balance calculation (matching backend logic):
+  // Initial Balance + Additions - Beta - Agent Payments + Finance Payments
+  // Finance payments are NOT deducted because they're already credited to agent wallet
+  const finalBalance = initialBalance + totalAdditions - betaAmount - agentPayments + financePayments
 
-  // Note: Deductions are now only saved when closing trip, not separately
+  // Check if current user is the trip creator
+  const tripCreatorId = trip?.agentId?._id || trip?.agentId?.id || trip?.agentId
+  const currentUserId = user?.id || user?._id
+  const isTripCreator = tripCreatorId && currentUserId && String(tripCreatorId).trim() === String(currentUserId).trim()
+  
+  // Only Admin and Agent can close trips (Finance cannot close)
+  // Allow closing even if trip is already completed (can re-close)
+  // Agent can only close when finalBalance === 0 (for new closes)
+  const canCloseTrip = 
+    (
+      (user?.role === 'Admin') || 
+      (user?.role === 'Agent' && 
+       (trip?.status === 'Active' || trip?.status === 'Completed') && 
+       trip?.status !== 'In Dispute' && 
+       !hasOpenDispute &&
+       (trip?.status === 'Completed' || Math.abs(finalBalance) < 0.01)) // For completed trips, allow re-close. For active trips, balance must be 0
+    )
+  
+  // Check if final amount payment is needed (balance > 0 and agent trying to close)
+  const needsFinalAmountPayment = user?.role === 'Agent' && 
+                                  finalBalance > 0.01 && 
+                                  trip?.status === 'Active'
+  
+  // For Closing Deductions: Any agent (including trip creator) can add, trip must be Active
+  // But if deductions are already saved, disable editing to prevent duplicates
+  const tripId = trip?.id || trip?._id
+  // currentUserId already declared above (line 161)
+  const tripIdStr = tripId ? String(tripId).trim() : ''
+  const currentUserIdStr = currentUserId ? String(currentUserId).trim() : ''
+  
+  // Check if there's a Settlement ledger entry for this trip (most reliable check)
+  const hasSettlementEntry = ledger?.some(entry => {
+    if (entry.type !== 'Settlement') return false
+    
+    const entryTripId = entry.tripId?._id || entry.tripId?.id || entry.tripId
+    const entryTripIdStr = entryTripId ? String(entryTripId).trim() : ''
+    const entryLrNumber = String(entry.lrNumber || '').trim()
+    const tripLrNumber = String(trip?.lrNumber || '').trim()
+    
+    const entryAgentId = entry.agent?._id || entry.agent?.id || entry.agent
+    const entryAgentIdStr = entryAgentId ? String(entryAgentId).trim() : ''
+    
+    const tripMatches = (entryTripIdStr && tripIdStr && entryTripIdStr === tripIdStr) ||
+                        (entryLrNumber && tripLrNumber && entryLrNumber === tripLrNumber && entryLrNumber !== '')
+    
+    const agentMatches = !currentUserIdStr || !entryAgentIdStr || entryAgentIdStr === currentUserIdStr
+    
+    return tripMatches && agentMatches
+  }) || false
+  
+  // Check if addedBy exists in trip.deductions
+  const deductionsAddedBy = trip?.deductions?.addedBy
+  const hasAddedBy = deductionsAddedBy && 
+                     deductionsAddedBy !== null && 
+                     deductionsAddedBy !== undefined && 
+                     String(deductionsAddedBy).trim() !== '' &&
+                     String(deductionsAddedBy).trim() !== 'undefined' &&
+                     String(deductionsAddedBy).trim() !== 'null'
+  
+  // Deductions are saved if: addedBy exists OR Settlement entry exists
+  // This ensures fields are disabled ONLY after saving, not before
+  const hasDeductionsBeenSaved = (hasAddedBy || hasSettlementEntry) && trip?.status === 'Active'
+  
+  // Debug logging - ALWAYS log to help debug
+  console.log('🔍 Closing Deductions Check:', {
+    tripId: tripId,
+    lrNumber: trip?.lrNumber,
+    hasAddedBy: hasAddedBy,
+    addedBy: deductionsAddedBy,
+    addedByType: typeof deductionsAddedBy,
+    hasSettlementEntry: hasSettlementEntry,
+    settlementEntries: ledger?.filter(e => e.type === 'Settlement').length || 0,
+    status: trip?.status,
+    hasDeductionsBeenSaved: hasDeductionsBeenSaved,
+    canEditDeductions: !hasDeductionsBeenSaved && trip?.status !== 'Completed',
+    deductions: trip?.deductions,
+    userRole: user?.role,
+    currentUserId: currentUserIdStr
+  })
+  
+  const canEditDeductions = user?.role === 'Agent' && 
+                           trip?.status !== 'Completed' &&
+                           !hasDeductionsBeenSaved // Disable if already saved once
+
+  // Note: Deductions can be saved separately, but once saved, they cannot be edited again
 
   const handleAddPayment = async (e) => {
     e.preventDefault()
@@ -363,7 +472,7 @@ const TripView = () => {
         autoClose: 3000,
       })
       setShowDisputeModal(false)
-      setDisputeForm({ type: '', reason: '' })
+      setDisputeForm({ type: 'DEFICIT (Freight Kam Enter Hua)', reason: '' })
       
       // Refresh trip data
       setTimeout(async () => {
@@ -415,6 +524,44 @@ const TripView = () => {
   }
 
   const handleCloseTrip = async () => {
+    // Validation: Agent can only close when finalBalance === 0
+    // If finalBalance > 0, check if agent has enough balance to pay
+    if (user?.role === 'Agent' && Math.abs(finalBalance) > 0.01) {
+      if (finalBalance > 0.01) {
+        // Need to pay final amount - check agent's balance
+        if (currentAgentBalance < finalBalance) {
+          toast.error(`Your balance (Rs ${currentAgentBalance.toLocaleString()}) is not enough to close this trip. Required: Rs ${finalBalance.toLocaleString()}`, {
+            position: 'top-right',
+            autoClose: 5000,
+          })
+          return
+        }
+        // Balance is enough, but need to pay first
+        toast.error(`Cannot close trip. Final balance must be 0. Please pay Rs ${finalBalance.toLocaleString()} first.`, {
+          position: 'top-right',
+          autoClose: 3000,
+        })
+        return
+      } else {
+        toast.error(`Cannot close trip. Final balance must be 0. Current balance: Rs ${finalBalance.toLocaleString()}`, {
+          position: 'top-right',
+          autoClose: 3000,
+        })
+        return
+      }
+    }
+
+    // Allow re-closing completed trips (no restriction)
+
+    // Finance cannot close trips
+    if (user?.role === 'Finance') {
+      toast.error('Finance cannot close trips. Only Agents and Admin can close trips.', {
+        position: 'top-right',
+        autoClose: 3000,
+      })
+      return
+    }
+
     if (!canCloseTrip && user?.role !== 'Admin') {
       toast.error('You cannot close this trip')
       return
@@ -434,14 +581,41 @@ const TripView = () => {
     
     if (window.confirm(confirmMessage)) {
       try {
-        // Save deductions first (only for non-bulk trips)
-        if (!trip.isBulk) {
+        // Save deductions first (only for non-bulk trips and only if trip is not already completed)
+        // If trip is already completed, deductions are already saved, so skip this step
+        if (!trip.isBulk && trip.status !== 'Completed') {
           const tripId = trip.id || trip._id
-          await updateDeductions(tripId, deductions)
+          await updateDeductions(tripId, {
+            ...deductions,
+            addedBy: currentUserId,
+            addedByRole: user?.role,
+          })
+          
+          // Reload trip data after saving deductions to get updated balance
+          // This ensures backend calculation matches frontend
+          const updatedTrip = await getTripById(id)
+          if (updatedTrip) {
+            setTrip(updatedTrip)
+            // Update deductions state with saved values
+            setDeductions({
+              cess: updatedTrip.deductions?.cess || '',
+              kata: updatedTrip.deductions?.kata || '',
+              excessTonnage: updatedTrip.deductions?.excessTonnage || '',
+              halting: updatedTrip.deductions?.halting || '',
+              expenses: updatedTrip.deductions?.expenses || '',
+              beta: updatedTrip.deductions?.beta || '',
+              others: updatedTrip.deductions?.others || '',
+              othersReason: updatedTrip.deductions?.othersReason || '',
+            })
+          }
         }
 
         const tripId = trip.id || trip._id
-        await closeTrip(tripId, hasOpenDispute && user?.role === 'Admin')
+        await closeTrip(tripId, {
+          forceClose: hasOpenDispute && user?.role === 'Admin', // Only Admin can force close
+          closedBy: currentUserId,
+          closedByRole: user?.role,
+        })
         toast.success(trip.isBulk ? 'Trip marked as Completed successfully' : 'Trip closed successfully')
         setShowCloseModal(false)
         
@@ -481,11 +655,22 @@ const TripView = () => {
 
     try {
       const tripId = trip.id || trip._id
-      await updateDeductions(tripId, deductions)
+      const currentUserId = user?.id || user?._id
+      
+      // Pass addedBy and addedByRole so backend knows which agent added the deductions
+      await updateDeductions(tripId, {
+        ...deductions,
+        addedBy: currentUserId,
+        addedByRole: user?.role || 'Agent',
+      })
       toast.success('Deductions saved successfully')
       
-      // Refresh trip data
-      setTimeout(async () => {
+      // Refresh trip data and ledger immediately to get updated deductions with addedBy field
+      try {
+        // Reload ledger first to get Settlement entry
+        await loadLedger()
+        
+        // Then refresh trip data
         const updatedTrip = await getTripById(id)
         if (updatedTrip) {
           setTrip(updatedTrip)
@@ -499,8 +684,13 @@ const TripView = () => {
             others: updatedTrip.deductions?.others || '',
             othersReason: updatedTrip.deductions?.othersReason || '',
           })
+          // Force re-render to update disabled state - fields will be disabled now
+          console.log('Deductions saved. addedBy:', updatedTrip.deductions?.addedBy)
+          console.log('Fields should now be disabled')
         }
-      }, 500)
+      } catch (error) {
+        console.error('Error refreshing trip after saving deductions:', error)
+      }
     } catch (error) {
       toast.error(error.message || 'Failed to save deductions')
     }
@@ -565,8 +755,9 @@ const TripView = () => {
               ⚠ Trip in Dispute - Cannot Close
             </div>
           )}
-          {/* NEW REQUIREMENT: Close Trip button must be disabled when status is In Dispute */}
-          {canCloseTrip && trip.status !== 'In Dispute' && !hasOpenDispute && (
+          {/* Close Trip Button Logic */}
+          {/* Agent can close when balance = 0 (for active trips) or anytime for completed trips */}
+          {canCloseTrip && user?.role === 'Agent' && trip.status !== 'In Dispute' && !hasOpenDispute && (
             <button
               onClick={handlePrepareToClose}
               className="btn-3d-primary flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-green-600 hover:bg-green-700 text-white font-semibold text-sm sm:text-lg shadow-lg whitespace-nowrap"
@@ -575,7 +766,30 @@ const TripView = () => {
               <span>{trip.isBulk ? 'Mark Completed' : 'Close Trip'}</span>
             </button>
           )}
-          {/* Show disabled button when in dispute (NEW REQUIREMENT - Strict blocking) */}
+          
+          {/* Agent needs to pay final amount before closing */}
+          {needsFinalAmountPayment && trip?.status === 'Active' && (
+            <button
+              onClick={() => setShowFinalAmountModal(true)}
+              className="btn-3d-primary flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-sm sm:text-lg shadow-lg whitespace-nowrap"
+            >
+              <FiCheckCircle size={18} className="sm:w-[22px] sm:h-[22px]" />
+              <span>Pay Final Amount (Rs {finalBalance.toLocaleString()})</span>
+            </button>
+          )}
+          
+          {/* Admin can close anytime (Finance cannot close) */}
+          {user?.role === 'Admin' && !hasOpenDispute && trip.status !== 'In Dispute' && (
+            <button
+              onClick={handlePrepareToClose}
+              className="btn-3d-primary flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-green-600 hover:bg-green-700 text-white font-semibold text-sm sm:text-lg shadow-lg whitespace-nowrap"
+            >
+              <FiCheckCircle size={18} className="sm:w-[22px] sm:h-[22px]" />
+              <span>{trip.isBulk ? 'Mark Completed' : 'Close Trip'}</span>
+            </button>
+          )}
+          
+          {/* Show disabled button when in dispute (Strict blocking) */}
           {(trip.status === 'In Dispute' || hasOpenDispute) && user?.role !== 'Admin' && (
             <button
               disabled
@@ -586,6 +800,8 @@ const TripView = () => {
               <span>Close Trip (Blocked - In Dispute)</span>
             </button>
           )}
+          
+          {/* Admin can force close even with disputes */}
           {user?.role === 'Admin' && (hasOpenDispute || trip.status === 'In Dispute') && (
             <button
               onClick={handlePrepareToClose}
@@ -593,6 +809,18 @@ const TripView = () => {
             >
               <FiCheckCircle size={18} className="sm:w-[22px] sm:h-[22px]" />
               <span>Force Close (Admin)</span>
+            </button>
+          )}
+          
+          {/* Finance role - show disabled button */}
+          {user?.role === 'Finance' && (
+            <button
+              disabled
+              className="btn-3d-secondary flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-gray-400 text-white font-semibold text-sm sm:text-lg shadow-lg whitespace-nowrap cursor-not-allowed opacity-60"
+              title="Finance cannot close trips. Only Agents and Admin can close trips."
+            >
+              <FiAlertCircle size={18} className="sm:w-[22px] sm:h-[22px]" />
+              <span>Close Trip (Not Allowed for Finance)</span>
             </button>
           )}
         </div>
@@ -771,8 +999,9 @@ const TripView = () => {
                         min="0"
                         value={deductions.cess}
                         onChange={(e) => setDeductions({ ...deductions, cess: e.target.value })}
-                        disabled={!canEditDeductions}
-                        className="input-field-3d"
+                        disabled={!canEditDeductions || hasDeductionsBeenSaved}
+                        readOnly={hasDeductionsBeenSaved}
+                        className={`input-field-3d ${hasDeductionsBeenSaved ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                         placeholder="0.00"
                       />
                     </div>
@@ -784,8 +1013,9 @@ const TripView = () => {
                         min="0"
                         value={deductions.kata}
                         onChange={(e) => setDeductions({ ...deductions, kata: e.target.value })}
-                        disabled={!canEditDeductions}
-                        className="input-field-3d"
+                        disabled={!canEditDeductions || hasDeductionsBeenSaved}
+                        readOnly={hasDeductionsBeenSaved}
+                        className={`input-field-3d ${hasDeductionsBeenSaved ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                         placeholder="0.00"
                       />
                     </div>
@@ -797,8 +1027,9 @@ const TripView = () => {
                         min="0"
                         value={deductions.excessTonnage}
                         onChange={(e) => setDeductions({ ...deductions, excessTonnage: e.target.value })}
-                        disabled={!canEditDeductions}
-                        className="input-field-3d"
+                        disabled={!canEditDeductions || hasDeductionsBeenSaved}
+                        readOnly={hasDeductionsBeenSaved}
+                        className={`input-field-3d ${hasDeductionsBeenSaved ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                         placeholder="0.00"
                       />
                     </div>
@@ -810,8 +1041,9 @@ const TripView = () => {
                         min="0"
                         value={deductions.halting}
                         onChange={(e) => setDeductions({ ...deductions, halting: e.target.value })}
-                        disabled={!canEditDeductions}
-                        className="input-field-3d"
+                        disabled={!canEditDeductions || hasDeductionsBeenSaved}
+                        readOnly={hasDeductionsBeenSaved}
+                        className={`input-field-3d ${hasDeductionsBeenSaved ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                         placeholder="0.00"
                       />
                     </div>
@@ -823,8 +1055,9 @@ const TripView = () => {
                         min="0"
                         value={deductions.expenses}
                         onChange={(e) => setDeductions({ ...deductions, expenses: e.target.value })}
-                        disabled={!canEditDeductions}
-                        className="input-field-3d"
+                        disabled={!canEditDeductions || hasDeductionsBeenSaved}
+                        readOnly={hasDeductionsBeenSaved}
+                        className={`input-field-3d ${hasDeductionsBeenSaved ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                         placeholder="0.00"
                       />
                     </div>
@@ -836,8 +1069,9 @@ const TripView = () => {
                         min="0"
                         value={deductions.beta}
                         onChange={(e) => setDeductions({ ...deductions, beta: e.target.value })}
-                        disabled={!canEditDeductions}
-                        className="input-field-3d"
+                        disabled={!canEditDeductions || hasDeductionsBeenSaved}
+                        readOnly={hasDeductionsBeenSaved}
+                        className={`input-field-3d ${hasDeductionsBeenSaved ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                         placeholder="0.00"
                       />
                     </div>
@@ -849,8 +1083,9 @@ const TripView = () => {
                         min="0"
                         value={deductions.others}
                         onChange={(e) => setDeductions({ ...deductions, others: e.target.value })}
-                        disabled={!canEditDeductions}
-                        className="input-field-3d"
+                        disabled={!canEditDeductions || hasDeductionsBeenSaved}
+                        readOnly={hasDeductionsBeenSaved}
+                        className={`input-field-3d ${hasDeductionsBeenSaved ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                         placeholder="0.00"
                       />
                     </div>
@@ -860,24 +1095,40 @@ const TripView = () => {
                         type="text"
                         value={deductions.othersReason}
                         onChange={(e) => setDeductions({ ...deductions, othersReason: e.target.value })}
-                        disabled={!canEditDeductions}
-                        className="input-field-3d"
+                        disabled={!canEditDeductions || hasDeductionsBeenSaved}
+                        readOnly={hasDeductionsBeenSaved}
+                        className={`input-field-3d ${hasDeductionsBeenSaved ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                         placeholder="Reason for others"
                       />
                     </div>
                   </div>
                   <div className="mt-4 pt-4 border-t-2 border-secondary">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                      <span className="text-text-secondary font-medium text-sm sm:text-base">Total Deductions:</span>
-                      <span className="text-text-primary font-bold text-base sm:text-lg break-words">
-                        Rs {Object.entries(deductions).reduce((sum, [key, val]) => {
-                          if (key === 'othersReason') return sum
-                          return sum + (parseFloat(val) || 0)
-                        }, 0).toLocaleString()}
+                      <span className="text-text-secondary font-medium text-sm sm:text-base">Total Additions (Cess, Kata, etc.):</span>
+                      <span className="text-text-primary font-bold text-base sm:text-lg break-words text-green-600">
+                        + Rs {totalAdditions.toLocaleString()}
                       </span>
+                      {betaAmount > 0 && (
+                        <>
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0">
+                            <span className="text-text-secondary font-medium text-sm sm:text-base">Beta/Batta:</span>
+                            <span className="text-text-primary font-bold text-base sm:text-lg break-words text-red-600">
+                              - Rs {betaAmount.toLocaleString()}
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
-                  {canEditDeductions && (
+                  {hasDeductionsBeenSaved && (
+                    <div className="mt-4 p-3 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
+                      <p className="text-yellow-800 text-sm font-medium flex items-center gap-2">
+                        <FiInfo size={16} />
+                        Closing deductions have already been saved. Fields are disabled to prevent duplicate entries.
+                      </p>
+                    </div>
+                  )}
+                  {canEditDeductions && !hasDeductionsBeenSaved && (
                     <div className="mt-4 flex justify-end">
                       <button
                         onClick={handleSaveDeductions}
@@ -934,9 +1185,15 @@ const TripView = () => {
                   <span className="text-text-primary font-medium text-sm sm:text-base break-words">- Rs {totalPayments.toLocaleString()}</span>
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0">
-                  <span className="text-text-secondary text-sm sm:text-base">Total Closing Deductions:</span>
-                  <span className="text-text-primary font-medium text-sm sm:text-base break-words">- Rs {totalDeductions.toLocaleString()}</span>
+                  <span className="text-text-secondary text-sm sm:text-base">Total Additions (Cess, Kata, etc.):</span>
+                  <span className="text-text-primary font-medium text-sm sm:text-base break-words text-green-600">+ Rs {totalAdditions.toLocaleString()}</span>
                 </div>
+                {betaAmount > 0 && (
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0">
+                    <span className="text-text-secondary text-sm sm:text-base">Beta/Batta:</span>
+                    <span className="text-text-primary font-medium text-sm sm:text-base break-words text-red-600">- Rs {betaAmount.toLocaleString()}</span>
+                  </div>
+                )}
                 <div className="pt-3 border-t-2 border-secondary flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                   <span className="text-text-primary font-bold text-base sm:text-lg">Final Balance (Auto):</span>
                   <span className="text-text-primary font-bold text-xl sm:text-2xl break-words">Rs {finalBalance.toLocaleString()}</span>
@@ -1105,13 +1362,34 @@ const TripView = () => {
                         <td className="py-2 px-2 text-text-primary font-medium text-xs sm:text-sm break-words">Rs {(parseFloat(payment.amount) || 0).toLocaleString()}</td>
                         <td className="py-2 px-2 text-text-primary text-xs break-words">{payment.reason || 'N/A'}</td>
                         <td className="py-2 px-2 text-text-primary text-xs break-words">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            payment.addedByRole === 'Finance' 
-                              ? 'bg-blue-100 text-blue-800' 
-                              : 'bg-gray-100 text-gray-800'
-                          }`}>
-                            {payment.addedByRole === 'Finance' ? 'Finance' : 'Agent'}
-                          </span>
+                          {(() => {
+                            // Get agent name who made the payment
+                            let agentName = 'Agent'
+                            if (payment.addedByRole === 'Finance') {
+                              agentName = 'Finance'
+                            } else if (payment.addedBy) {
+                              // Try to get agent name from addedBy (could be object or ID)
+                              if (typeof payment.addedBy === 'object' && payment.addedBy?.name) {
+                                agentName = payment.addedBy.name
+                              } else {
+                                // Try to find agent from agents list
+                                const agentId = payment.addedBy?._id || payment.addedBy?.id || payment.addedBy
+                                const agent = agents?.find(a => 
+                                  String(a.id || a._id) === String(agentId)
+                                )
+                                agentName = agent?.name || 'Agent'
+                              }
+                            }
+                            return (
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                payment.addedByRole === 'Finance' 
+                                  ? 'bg-blue-100 text-blue-800' 
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}>
+                                {agentName}
+                              </span>
+                            )
+                          })()}
                         </td>
                         <td className="py-2 px-2 text-text-primary text-xs break-words">
                           {payment.createdAt ? new Date(payment.createdAt).toLocaleString('en-IN') : 'N/A'}
@@ -1129,6 +1407,105 @@ const TripView = () => {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <span className="text-text-secondary font-medium text-xs sm:text-sm">Total Payments:</span>
                 <span className="text-text-primary font-bold text-sm sm:text-base break-words">Rs {totalPayments.toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* Transaction History Section (Ledger Entries) */}
+            <div className="mt-10 bg-white rounded-xl border border-gray-200 p-4 sm:p-6 mb-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 sm:mb-6">
+                <div>
+                  <h2 className="text-lg sm:text-xl font-bold text-text-primary flex items-center gap-2">
+                    <FiFile className="text-blue-600" />
+                    Transaction History
+                  </h2>
+                  <p className="text-xs sm:text-sm text-text-secondary mt-1">
+                    Financial adjustments and records for this trip
+                  </p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-lg border border-gray-200">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-gray-50/50 border-b border-gray-200 text-xs uppercase text-text-secondary font-semibold">
+                    <tr>
+                      <th className="px-4 py-3">Date & Time</th>
+                      <th className="px-4 py-3 w-1/3">Description</th>
+                      <th className="px-4 py-3">Type</th>
+                      <th className="px-4 py-3 text-right">Amount</th>
+                      <th className="px-4 py-3 text-center">Effect</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {ledger
+                      .filter(entry => 
+                        (entry.tripId === trip.id || entry.tripId?._id === trip.id || entry.lrNumber === trip.lrNumber) &&
+                        (entry.type === 'Dispute - Freight Correction' || entry.type === 'Dispute - Advance Correction' || entry.type === 'Trip Created' || entry.type === 'Trip Closed')
+                      )
+                      .sort((a, b) => new Date(b.date) - new Date(a.date))
+                      .map((entry, index) => (
+                      <tr key={index} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 text-sm text-text-secondary">
+                          <div className="font-medium text-text-primary">
+                            {new Date(entry.date).toLocaleDateString('en-IN', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric'
+                            })}
+                          </div>
+                          <div className="text-xs text-text-muted">
+                            {new Date(entry.date).toLocaleTimeString('en-IN', {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-sm text-text-primary font-medium">{entry.description}</span>
+                            {entry.paidBy === 'Admin' && (
+                              <span className="inline-flex items-center w-fit px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-100 text-purple-700">
+                                ADMIN UPDATE
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                            entry.type.includes('Correction') ? 'bg-orange-50 text-orange-700 border border-orange-200' :
+                            entry.type === 'Trip Created' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                            'bg-gray-50 text-gray-700 border border-gray-200'
+                          }`}>
+                            {entry.type.replace('Dispute - ', '')}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className="text-sm font-bold text-text-primary font-mono">
+                            Rs {entry.amount.toLocaleString()}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`inline-flex items-center justify-center min-w-[70px] px-2 py-0.5 text-xs font-bold rounded-full ${
+                            entry.direction === 'Credit' 
+                              ? 'bg-green-100 text-green-700' 
+                              : 'bg-red-100 text-red-700'
+                          }`}>
+                            {entry.direction} {entry.direction === 'Credit' ? '+' : '-'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {ledger.filter(entry => 
+                        (entry.tripId === trip.id || entry.tripId?._id === trip.id || entry.lrNumber === trip.lrNumber) &&
+                        (entry.type === 'Dispute - Freight Correction' || entry.type === 'Dispute - Advance Correction' || entry.type === 'Trip Created' || entry.type === 'Trip Closed')
+                      ).length === 0 && (
+                      <tr>
+                        <td colSpan="5" className="px-4 py-8 text-center text-text-muted">
+                          <p className="text-sm">No transaction history found</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -1262,10 +1639,9 @@ const TripView = () => {
                   onChange={(e) => setDisputeForm({ ...disputeForm, type: e.target.value })}
                   className="input-field-3d"
                 >
-                  <option value="">Select type</option>
+                  <option value="DEFICIT">DEFICIT</option>
+                  <option value="EXCESS">EXCESS</option>
                   <option value="Payment Dispute">Payment Dispute</option>
-                  <option value="Amount Dispute">Amount Dispute</option>
-                  <option value="Service Dispute">Service Dispute</option>
                   <option value="Other">Other</option>
                 </select>
               </div>
@@ -1292,6 +1668,134 @@ const TripView = () => {
                 </button>
                 <button type="submit" className="btn-3d-primary px-4 py-2">
                   Submit Dispute
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Final Amount Payment Modal */}
+      {showFinalAmountModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+          <div className="bg-background-light border-2 border-secondary rounded-lg shadow-3d max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-text-primary">Pay Final Amount</h2>
+              <button
+                onClick={() => setShowFinalAmountModal(false)}
+                className="text-text-secondary hover:text-text-primary"
+              >
+                <FiX size={24} />
+              </button>
+            </div>
+            <div className="mb-4">
+              <p className="text-text-secondary mb-2">
+                Final Balance: <span className="font-bold text-text-primary">Rs {finalBalance.toLocaleString()}</span>
+              </p>
+              <p className="text-sm text-text-secondary">
+                Please pay the final amount to close this trip. After payment, the trip will be closed automatically.
+              </p>
+            </div>
+            <form onSubmit={async (e) => {
+              e.preventDefault()
+              if (!finalAmountForm.amount || parseFloat(finalAmountForm.amount) <= 0) {
+                toast.error('Please enter a valid amount')
+                return
+              }
+              if (finalAmountForm.mode === 'Online' && !finalAmountForm.bank) {
+                toast.error('Bank selection is required for Online payments')
+                return
+              }
+              if (Math.abs(parseFloat(finalAmountForm.amount) - finalBalance) > 0.01) {
+                toast.error(`Amount must be exactly Rs ${finalBalance.toLocaleString()}`)
+                return
+              }
+              try {
+                const tripId = trip.id || trip._id
+                // Add final amount payment
+                await addOnTripPayment(tripId, {
+                  amount: parseFloat(finalAmountForm.amount),
+                  reason: `Final amount payment for trip closure`,
+                  agentId: currentUserId,
+                  mode: finalAmountForm.mode,
+                  bank: finalAmountForm.bank || (finalAmountForm.mode === 'Cash' ? 'Cash' : ''),
+                  userRole: user?.role,
+                  userId: currentUserId,
+                })
+                toast.success('Final amount paid successfully. Trip will be closed now.')
+                setShowFinalAmountModal(false)
+                setFinalAmountForm({ amount: '', mode: 'Cash', bank: '' })
+                // Close trip automatically after payment
+                setTimeout(async () => {
+                  await handleCloseTrip()
+                }, 1000)
+              } catch (error) {
+                toast.error(error.message || 'Failed to process payment')
+              }
+            }} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-2">
+                  Amount (Rs) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  required
+                  value={finalAmountForm.amount}
+                  onChange={(e) => setFinalAmountForm({ ...finalAmountForm, amount: e.target.value })}
+                  className="input-field-3d w-full"
+                  placeholder={`Enter ${finalBalance.toLocaleString()}`}
+                />
+                <p className="text-xs text-text-secondary mt-1">Required: Rs {finalBalance.toLocaleString()}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-2">
+                  Mode <span className="text-red-500">*</span>
+                </label>
+                <select
+                  required
+                  value={finalAmountForm.mode}
+                  onChange={(e) => setFinalAmountForm({ ...finalAmountForm, mode: e.target.value, bank: e.target.value === 'Cash' ? '' : finalAmountForm.bank })}
+                  className="input-field-3d w-full"
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="Online">Online</option>
+                </select>
+              </div>
+              {finalAmountForm.mode === 'Online' && (
+                <div>
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
+                    Bank <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={finalAmountForm.bank}
+                    onChange={(e) => setFinalAmountForm({ ...finalAmountForm, bank: e.target.value })}
+                    className="input-field-3d w-full"
+                  >
+                    <option value="">Select Bank</option>
+                    <option value="HDFC Bank">HDFC Bank</option>
+                    <option value="ICICI Bank">ICICI Bank</option>
+                    <option value="State Bank of India">State Bank of India</option>
+                    <option value="Axis Bank">Axis Bank</option>
+                    <option value="Kotak Mahindra Bank">Kotak Mahindra Bank</option>
+                    <option value="Punjab National Bank">Punjab National Bank</option>
+                    <option value="Bank of Baroda">Bank of Baroda</option>
+                    <option value="Canara Bank">Canara Bank</option>
+                  </select>
+                </div>
+              )}
+              <div className="flex gap-3 justify-end pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowFinalAmountModal(false)}
+                  className="btn-3d-secondary px-4 py-2"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-3d-primary px-4 py-2">
+                  Pay & Close Trip
                 </button>
               </div>
             </form>
@@ -1343,19 +1847,19 @@ const TripView = () => {
                 <span className="text-text-primary font-medium text-sm break-words">- Rs {totalPayments.toLocaleString()}</span>
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0">
-                <span className="text-text-secondary text-sm">Total Closing Deductions:</span>
-                <span className="text-text-primary font-medium text-sm break-words">- Rs {Object.entries(deductions).reduce((sum, [key, val]) => {
-                  if (key === 'othersReason') return sum
-                  return sum + (parseFloat(val) || 0)
-                }, 0).toLocaleString()}</span>
+                <span className="text-text-secondary text-sm">Total Additions (Cess, Kata, etc.):</span>
+                <span className="text-text-primary font-medium text-sm break-words text-green-600">+ Rs {totalAdditions.toLocaleString()}</span>
               </div>
+              {betaAmount > 0 && (
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0">
+                  <span className="text-text-secondary text-sm">Beta/Batta:</span>
+                  <span className="text-text-primary font-medium text-sm break-words text-red-600">- Rs {betaAmount.toLocaleString()}</span>
+                </div>
+              )}
               <div className="pt-2 border-t-2 border-secondary flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <span className="text-text-primary font-bold text-base sm:text-lg">Final Balance:</span>
                 <span className="text-text-primary font-bold text-lg sm:text-xl break-words">
-                  Rs {(initialBalance - totalPayments - Object.entries(deductions).reduce((sum, [key, val]) => {
-                    if (key === 'othersReason') return sum
-                    return sum + (parseFloat(val) || 0)
-                  }, 0)).toLocaleString()}
+                  Rs {finalBalance.toLocaleString()}
                 </span>
               </div>
               {deductions.beta && parseFloat(deductions.beta) > 0 && (

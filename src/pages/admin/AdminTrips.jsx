@@ -155,6 +155,7 @@ const AdminTrips = () => {
               <th className="text-left py-3 px-4 text-text-secondary font-medium">Status</th>
               <th className="text-left py-3 px-4 text-text-secondary font-medium">LR Sheet</th>
               <th className="text-left py-3 px-4 text-text-secondary font-medium">Route</th>
+              <th className="text-left py-3 px-4 text-text-secondary font-medium">Driver Phone</th>
               <th className="text-left py-3 px-4 text-text-secondary font-medium">Attachments</th>
               <th className="text-left py-3 px-4 text-text-secondary font-medium">Actions</th>
             </tr>
@@ -188,6 +189,15 @@ const AdminTrips = () => {
                   </td>
                   <td className="py-4 px-4 text-text-primary">{trip.lrSheet || 'Not Received'}</td>
                   <td className="py-4 px-4 text-text-primary">{trip.route || `${trip.routeFrom || ''} - ${trip.routeTo || ''}`}</td>
+                  <td className="py-4 px-4 text-text-primary">
+                    {trip.driverPhoneNumber ? (
+                      <a href={`tel:${trip.driverPhoneNumber}`} className="text-primary hover:underline">
+                        {trip.driverPhoneNumber}
+                      </a>
+                    ) : (
+                      <span className="text-text-muted">N/A</span>
+                    )}
+                  </td>
                   <td className="py-4 px-4">
                     {trip.attachments && trip.attachments.length > 0 ? (
                       <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -226,7 +236,7 @@ const AdminTrips = () => {
               ))
             ) : (
               <tr>
-                <td colSpan="9" className="py-8 text-center text-text-muted">
+                <td colSpan="10" className="py-8 text-center text-text-muted">
                   No trips found.
                 </td>
               </tr>
