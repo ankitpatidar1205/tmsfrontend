@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useData } from '../../context/DataContext'
-import { FiTruck, FiUsers, FiAlertCircle, FiFileText, FiCheckCircle, FiClock } from 'react-icons/fi'
+import { FiTruck, FiUsers, FiAlertCircle, FiFileText, FiCheckCircle, FiClock, FiCalendar } from 'react-icons/fi'
 import { Link } from 'react-router-dom'
 import AgentFilter from '../../components/AgentFilter'
 
@@ -9,15 +9,37 @@ const AdminDashboard = () => {
   const { user } = useAuth()
   const { trips, ledger, disputes } = useData()
   const [selectedAgentId, setSelectedAgentId] = useState(null)
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
 
   const filteredTrips = useMemo(() => {
-    if (!selectedAgentId) return trips
-    return trips.filter(t => 
-      t.agentId === selectedAgentId || 
-      t.agentId?._id === selectedAgentId ||
-      t.agentId?.id === selectedAgentId
-    )
-  }, [trips, selectedAgentId])
+    let filtered = trips
+    
+    // Filter by agent
+    if (selectedAgentId) {
+      filtered = filtered.filter(t => 
+        t.agentId === selectedAgentId || 
+        t.agentId?._id === selectedAgentId ||
+        t.agentId?.id === selectedAgentId
+      )
+    }
+    
+    // Filter by date range
+    if (startDate) {
+      filtered = filtered.filter(t => {
+        const tripDate = new Date(t.date).toISOString().split('T')[0]
+        return tripDate >= startDate
+      })
+    }
+    if (endDate) {
+      filtered = filtered.filter(t => {
+        const tripDate = new Date(t.date).toISOString().split('T')[0]
+        return tripDate <= endDate
+      })
+    }
+    
+    return filtered
+  }, [trips, selectedAgentId, startDate, endDate])
 
   const kpiData = useMemo(() => {
     const activeTrips = filteredTrips.filter(t => t.status === 'Active').length
@@ -115,14 +137,59 @@ const AdminDashboard = () => {
             <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-text-primary mb-1 sm:mb-2">Admin Dashboard</h1>
             <p className="text-xs sm:text-sm text-text-secondary">Welcome back, {user?.name || 'Admin'}! Here's your system overview</p>
           </div>
-          <div className="w-full sm:w-auto">
-            <label className="block text-xs sm:text-sm font-medium text-text-secondary mb-2">
-              Filter by Agent
-            </label>
-            <AgentFilter
-              selectedAgent={selectedAgentId}
-              onAgentChange={setSelectedAgentId}
-            />
+          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+            <div className="w-full sm:w-auto">
+              <label className="block text-xs sm:text-sm font-medium text-text-secondary mb-2">
+                Filter by Agent
+              </label>
+              <AgentFilter
+                selectedAgent={selectedAgentId}
+                onAgentChange={setSelectedAgentId}
+              />
+            </div>
+          </div>
+        </div>
+        
+        {/* Date Range Filters */}
+        <div className="card p-4 mb-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="flex items-center gap-2 text-text-secondary">
+              <FiCalendar size={18} />
+              <span className="text-sm font-medium">Date Range Filter:</span>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 flex-1">
+              <div className="flex-1 sm:flex-none">
+                <label className="block text-xs text-text-secondary mb-1">From Date</label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="input-field-3d w-full sm:w-auto"
+                />
+              </div>
+              <div className="flex-1 sm:flex-none">
+                <label className="block text-xs text-text-secondary mb-1">To Date</label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="input-field-3d w-full sm:w-auto"
+                />
+              </div>
+              {(startDate || endDate) && (
+                <div className="flex items-end">
+                  <button
+                    onClick={() => {
+                      setStartDate('')
+                      setEndDate('')
+                    }}
+                    className="btn-3d-secondary px-4 py-2 text-sm"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

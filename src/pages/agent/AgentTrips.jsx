@@ -16,6 +16,8 @@ const AgentTrips = () => {
   // Filter trips to show only agent's trips (restricted to their branch)
   const [agentTrips, setAgentTrips] = useState([])
   const [lrSearchTerm, setLrSearchTerm] = useState('')
+  const [companyNames, setCompanyNames] = useState([])
+  const [isLoadingCompanies, setIsLoadingCompanies] = useState(false)
 
   // Read LR number from URL query params on mount (for LR search navigation)
   useEffect(() => {
@@ -73,15 +75,42 @@ const AgentTrips = () => {
     }
   }, [trips, user?.id, user?._id, user?.role, user?.name])
 
+  useEffect(() => {
+    // Fetch company names from admin-managed list
+    const fetchCompanyNames = async () => {
+      try {
+        setIsLoadingCompanies(true)
+        const { companyAPI } = await import('../../services/api')
+        const companies = await companyAPI.getCompanies()
+        // Extract company names from the response
+        const names = Array.isArray(companies) 
+          ? companies.map(c => c.name || c).filter(Boolean)
+          : []
+        setCompanyNames(names)
+      } catch (error) {
+        console.error('Error loading company names:', error)
+        setCompanyNames([])
+      } finally {
+        setIsLoadingCompanies(false)
+      }
+    }
+
+    fetchCompanyNames()
+  }, [])
+
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [lrDuplicateError, setLrDuplicateError] = useState('')
+  const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false)
   const [formData, setFormData] = useState({
     lrNumber: '',
     date: new Date().toISOString().split('T')[0],
     truckNumber: '',
+    driverPhoneNumber: '',
     companyName: '',
     routeFrom: '',
     routeTo: '',
     tonnage: '',
+    pricePerTone: '',
     lrSheet: '',
     isBulk: false,
     freightAmount: '',
@@ -89,6 +118,21 @@ const AgentTrips = () => {
     balanceAmount: '',
     status: 'Active',
   })
+
+  // Auto-calculate freight amount from tonnage × price per tone
+  useEffect(() => {
+    if (!formData.isBulk && formData.tonnage && formData.pricePerTone) {
+      const tonnage = parseFloat(formData.tonnage) || 0
+      const pricePerTone = parseFloat(formData.pricePerTone) || 0
+      if (tonnage > 0 && pricePerTone > 0) {
+        const calculatedFreight = (tonnage * pricePerTone).toFixed(2)
+        setFormData((prev) => ({
+          ...prev,
+          freightAmount: calculatedFreight,
+        }))
+      }
+    }
+  }, [formData.tonnage, formData.pricePerTone, formData.isBulk])
 
   // Auto-calculate balance (only for regular trips)
   useEffect(() => {
@@ -110,14 +154,18 @@ const AgentTrips = () => {
   }, [formData.freightAmount, formData.advancePaid, formData.isBulk])
 
   const handleCreate = () => {
+    setLrDuplicateError('')
+    setIsCheckingDuplicate(false)
     setFormData({
       lrNumber: '',
       date: new Date().toISOString().split('T')[0],
       truckNumber: '',
+      driverPhoneNumber: '',
       companyName: '',
       routeFrom: '',
       routeTo: '',
       tonnage: '',
+      pricePerTone: '',
       lrSheet: '',
       isBulk: false,
       freightAmount: '',
@@ -142,8 +190,72 @@ const AgentTrips = () => {
     navigate(`/agent/trips/${trip.id}`)
   }
 
+  // Check for duplicate LR number before submission
+  const checkDuplicateLR = async (lrNumber) => {
+    if (!lrNumber || !lrNumber.trim()) {
+      setLrDuplicateError('')
+      return false
+    }
+
+    setIsCheckingDuplicate(true)
+    try {
+      // Check if LR number already exists in current trips list
+      const trimmedLR = lrNumber.trim().toLowerCase()
+      const duplicate = trips.some(trip => {
+        const tripLR = (trip.lrNumber || trip.tripId || '').toString().toLowerCase().trim()
+        return tripLR === trimmedLR
+      })
+
+      if (duplicate) {
+        setLrDuplicateError(`LR Number "${lrNumber}" already exists. Please search for this trip or use a different LR number.`)
+        setIsCheckingDuplicate(false)
+        return true
+      }
+
+      // Also check via API to be absolutely sure
+      const { tripAPI } = await import('../../services/api')
+      const existingTrips = await tripAPI.getTrips({ lrNumber: lrNumber.trim() })
+      
+      if (existingTrips && existingTrips.length > 0) {
+        setLrDuplicateError(`LR Number "${lrNumber}" already exists. Please search for this trip or use a different LR number.`)
+        setIsCheckingDuplicate(false)
+        return true
+      }
+
+      setLrDuplicateError('')
+      setIsCheckingDuplicate(false)
+      return false
+    } catch (error) {
+      console.error('Error checking duplicate LR:', error)
+      setIsCheckingDuplicate(false)
+      // Don't block submission if check fails, backend will catch it
+      return false
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
+    
+    // Validate LR number is provided
+    if (!formData.lrNumber || !formData.lrNumber.trim()) {
+      toast.error('LR Number is required', {
+        position: 'top-right',
+        autoClose: 3000,
+      })
+      return
+    }
+
+    // Check for duplicate before submitting
+    const isDuplicate = await checkDuplicateLR(formData.lrNumber)
+    if (isDuplicate) {
+      // Set search term to help user find the duplicate
+      setLrSearchTerm(formData.lrNumber)
+      toast.error(`LR Number "${formData.lrNumber}" already exists. Please use the search function above to find the existing trip.`, {
+        position: 'top-right',
+        autoClose: 6000,
+      })
+      return // Prevent submission
+    }
     
     try {
       // Find branch ID if user has branch
@@ -165,6 +277,7 @@ const AgentTrips = () => {
         tripId: formData.lrNumber || `TR${Date.now()}`,
         date: formData.date,
         truckNumber: formData.truckNumber,
+        driverPhoneNumber: formData.driverPhoneNumber,
         companyName: formData.companyName,
         routeFrom: formData.routeFrom,
         routeTo: formData.routeTo,
@@ -202,10 +315,12 @@ const AgentTrips = () => {
         lrNumber: '',
         date: new Date().toISOString().split('T')[0],
         truckNumber: '',
+        driverPhoneNumber: '',
         companyName: '',
         routeFrom: '',
         routeTo: '',
         tonnage: '',
+        pricePerTone: '',
         lrSheet: '',
         isBulk: false,
         freightAmount: '',
@@ -214,10 +329,21 @@ const AgentTrips = () => {
         status: 'Active',
       })
     } catch (error) {
-      toast.error(error.message || 'Failed to create trip', {
-        position: 'top-right',
-        autoClose: 3000,
-      })
+      // Check if error is due to duplicate LR number
+      const errorMessage = error.message || 'Failed to create trip'
+      if (errorMessage.includes('already exists') || errorMessage.includes('duplicate')) {
+        setLrDuplicateError(`LR Number "${formData.lrNumber}" already exists.`)
+        setLrSearchTerm(formData.lrNumber)
+        toast.error(errorMessage + ' Please use the search function above to find the existing trip.', {
+          position: 'top-right',
+          autoClose: 6000,
+        })
+      } else {
+        toast.error(errorMessage, {
+          position: 'top-right',
+          autoClose: 3000,
+        })
+      }
     }
   }
 
@@ -290,6 +416,7 @@ const AgentTrips = () => {
               <th className="text-left py-3 px-4 text-text-secondary font-medium">Status</th>
               <th className="text-left py-3 px-4 text-text-secondary font-medium">LR Sheet</th>
               <th className="text-left py-3 px-4 text-text-secondary font-medium">Route</th>
+              <th className="text-left py-3 px-4 text-text-secondary font-medium">Driver Phone</th>
               <th className="text-left py-3 px-4 text-text-secondary font-medium">Actions</th>
             </tr>
           </thead>
@@ -322,6 +449,15 @@ const AgentTrips = () => {
                   </td>
                   <td className="py-4 px-4 text-text-primary">{trip.lrSheet || 'Not Received'}</td>
                   <td className="py-4 px-4 text-text-primary">{trip.route || `${trip.routeFrom || ''} - ${trip.routeTo || ''}`}</td>
+                  <td className="py-4 px-4 text-text-primary">
+                    {trip.driverPhoneNumber ? (
+                      <a href={`tel:${trip.driverPhoneNumber}`} className="text-primary hover:underline">
+                        {trip.driverPhoneNumber}
+                      </a>
+                    ) : (
+                      <span className="text-text-muted">N/A</span>
+                    )}
+                  </td>
                   <td className="py-4 px-4">
                     <div className="flex items-center gap-2">
                       <button
@@ -337,7 +473,7 @@ const AgentTrips = () => {
               ))
             ) : (
               <tr>
-                <td colSpan="8" className="py-8 text-center text-text-muted">
+                <td colSpan="9" className="py-8 text-center text-text-muted">
                   {lrSearchTerm ? `No trips found matching "${lrSearchTerm}"` : 'No trips found. Create your first trip!'}
                 </td>
               </tr>
@@ -351,14 +487,18 @@ const AgentTrips = () => {
         isOpen={showCreateModal}
         onClose={() => {
           setShowCreateModal(false)
+          setLrDuplicateError('')
+          setIsCheckingDuplicate(false)
           setFormData({
             lrNumber: '',
             date: new Date().toISOString().split('T')[0],
             truckNumber: '',
+            driverPhoneNumber: '',
             companyName: '',
             routeFrom: '',
             routeTo: '',
             tonnage: '',
+            pricePerTone: '',
             lrSheet: '',
             isBulk: false,
             freightAmount: '',
@@ -386,10 +526,30 @@ const AgentTrips = () => {
                 type="text"
                 required
                 value={formData.lrNumber}
-                onChange={(e) => setFormData({ ...formData, lrNumber: e.target.value })}
-                className="input-field-3d"
+                onChange={(e) => {
+                  const newLR = e.target.value
+                  setFormData({ ...formData, lrNumber: newLR })
+                  setLrDuplicateError('')
+                }}
+                onBlur={async () => {
+                  if (formData.lrNumber && formData.lrNumber.trim()) {
+                    await checkDuplicateLR(formData.lrNumber)
+                  }
+                }}
+                className={`input-field-3d ${lrDuplicateError ? 'border-red-500 border-2' : ''}`}
                 placeholder="LR001"
               />
+              {lrDuplicateError && (
+                <div className="mt-2 p-3 bg-red-50 border-2 border-red-200 rounded-lg">
+                  <p className="text-sm text-red-800 font-medium">{lrDuplicateError}</p>
+                  <p className="text-xs text-red-600 mt-1">
+                    Use the search function above to find the existing trip with this LR number.
+                  </p>
+                </div>
+              )}
+              {isCheckingDuplicate && (
+                <p className="mt-1 text-xs text-text-secondary">Checking for duplicates...</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-2">
@@ -421,16 +581,48 @@ const AgentTrips = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-2">
-                Company Name <span className="text-red-500">*</span>
+                Driver Phone Number <span className="text-red-500">*</span>
               </label>
               <input
-                type="text"
+                type="tel"
                 required
-                value={formData.companyName}
-                onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
+                value={formData.driverPhoneNumber}
+                onChange={(e) => setFormData({ ...formData, driverPhoneNumber: e.target.value })}
                 className="input-field-3d"
-                placeholder="ABC Transport"
+                placeholder="9876543210"
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-2">
+                Company Name <span className="text-red-500">*</span>
+              </label>
+              <div className="space-y-2">
+                <select
+                  required
+                  value={formData.companyName}
+                  onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
+                  className="input-field-3d"
+                  disabled={isLoadingCompanies && companyNames.length === 0}
+                >
+                  <option value="">Select company</option>
+                  {companyNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                {isLoadingCompanies && (
+                  <p className="text-xs text-text-secondary">Loading company names...</p>
+                )}
+                {!isLoadingCompanies && companyNames.length === 0 && (
+                  <p className="text-xs text-text-secondary">
+                    No companies available. Please contact admin to add companies.
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 
@@ -480,6 +672,28 @@ const AgentTrips = () => {
                 placeholder="10.5"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-2">
+                Price Per Tone (Rs)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.pricePerTone}
+                onChange={(e) => setFormData({ ...formData, pricePerTone: e.target.value })}
+                className="input-field-3d"
+                placeholder="1000"
+              />
+              {formData.tonnage && formData.pricePerTone && (
+                <p className="text-xs text-green-600 mt-1">
+                  Auto Freight: {formData.tonnage} × {formData.pricePerTone} = Rs {((parseFloat(formData.tonnage) || 0) * (parseFloat(formData.pricePerTone) || 0)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-2">
                 LR Sheet Status
@@ -565,13 +779,21 @@ const AgentTrips = () => {
           <div className="flex gap-3 justify-end pt-4">
             <button
               type="button"
-              onClick={() => setShowCreateModal(false)}
+              onClick={() => {
+                setShowCreateModal(false)
+                setLrDuplicateError('')
+                setIsCheckingDuplicate(false)
+              }}
               className="btn-3d-secondary px-4 py-2"
             >
               Cancel
             </button>
-            <button type="submit" className="btn-3d-primary px-4 py-2">
-              Create Trip
+            <button 
+              type="submit" 
+              className="btn-3d-primary px-4 py-2"
+              disabled={!!lrDuplicateError || isCheckingDuplicate}
+            >
+              {isCheckingDuplicate ? 'Checking...' : 'Create Trip'}
             </button>
           </div>
         </form>

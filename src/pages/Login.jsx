@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { toast } from 'react-toastify'
 import { FiMail, FiLock, FiEye, FiEyeOff } from 'react-icons/fi'
-import logo from '../components/assets/new-logo.png'
+import logo from '../components/assets/logo.png'
 
 const Login = () => {
   const [formData, setFormData] = useState({
@@ -59,11 +59,13 @@ const Login = () => {
         {/* Logo and Header */}
         <div className="text-center mb-6 sm:mb-8">
           <div className="flex justify-center mb-3 sm:mb-4">
-            <img 
-              src={logo} 
-              alt="TMS Logo" 
-              className="h-16 sm:h-20 md:h-24 w-auto object-contain"
-            />
+            <div className="w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 flex items-center justify-center bg-white rounded-2xl shadow-lg p-2">
+              <img 
+                src={logo} 
+                alt="TMS Logo" 
+                className="w-full h-full object-contain"
+              />
+            </div>
           </div>
           <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-text-primary mb-1 sm:mb-2">Transport Management System</h1>
           <p className="text-text-secondary text-sm sm:text-base">Sign in to your account</p>

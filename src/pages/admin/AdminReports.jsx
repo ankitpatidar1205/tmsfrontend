@@ -1,11 +1,33 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useData } from '../../context/DataContext'
 import { FiDownload, FiFilter, FiSearch, FiX } from 'react-icons/fi'
 import AgentFilter from '../../components/AgentFilter'
 import { toast } from 'react-toastify'
+import * as XLSX from 'xlsx'
 
 const AdminReports = () => {
-  const { trips, agents, ledger } = useData()
+  const { trips, agents, ledger, loadTrips, loadLedger, loadAgents } = useData()
+  
+  // Load data when component mounts
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        await Promise.all([
+          loadTrips(),
+          loadLedger(),
+          loadAgents(),
+        ])
+      } catch (error) {
+        console.error('Error loading report data:', error)
+        toast.error('Failed to load report data', {
+          position: 'top-right',
+          autoClose: 3000,
+        })
+      }
+    }
+    loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   
   const [reportType, setReportType] = useState('Trips - Detail')
   const [dateFrom, setDateFrom] = useState('')
@@ -25,10 +47,16 @@ const AdminReports = () => {
 
     // Apply date filters
     if (dateFrom) {
-      filtered = filtered.filter(t => t.date >= dateFrom)
+      filtered = filtered.filter(t => {
+        const tripDate = t.date ? (typeof t.date === 'string' ? t.date.split('T')[0] : new Date(t.date).toISOString().split('T')[0]) : ''
+        return tripDate >= dateFrom
+      })
     }
     if (dateTo) {
-      filtered = filtered.filter(t => t.date <= dateTo)
+      filtered = filtered.filter(t => {
+        const tripDate = t.date ? (typeof t.date === 'string' ? t.date.split('T')[0] : new Date(t.date).toISOString().split('T')[0]) : ''
+        return tripDate <= dateTo
+      })
     }
 
     // Apply other filters based on report type
@@ -278,12 +306,17 @@ const AdminReports = () => {
           const payments = trip.onTripPayments || []
           const totalPayments = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
           const deductions = trip.deductions || {}
-          const totalDeductions = Object.entries(deductions).reduce((sum, [key, val]) => {
-            if (key === 'othersReason' || key === 'beta') return sum
-            return sum + (parseFloat(val) || 0)
-          }, 0)
-          routeProfitability[route].totalExpenses += totalPayments + totalDeductions
-          routeProfitability[route].totalProfit += ((trip.freight || trip.freightAmount || 0) - (trip.advance || trip.advancePaid || 0) - totalPayments - totalDeductions)
+          // New logic: Additions (Cess, Kata, etc.) are added, Beta is subtracted
+          const totalAdditions = (parseFloat(deductions.cess) || 0) + 
+                                (parseFloat(deductions.kata) || 0) + 
+                                (parseFloat(deductions.excessTonnage) || 0) + 
+                                (parseFloat(deductions.halting) || 0) + 
+                                (parseFloat(deductions.expenses) || 0) + 
+                                (parseFloat(deductions.others) || 0)
+          const betaAmount = parseFloat(deductions.beta) || 0
+          // Profit = Freight - Advance - Payments - Beta + Additions
+          routeProfitability[route].totalExpenses += totalPayments + betaAmount - totalAdditions
+          routeProfitability[route].totalProfit += ((trip.freight || trip.freightAmount || 0) - (trip.advance || trip.advancePaid || 0) - totalPayments - betaAmount + totalAdditions)
         })
         return Object.values(routeProfitability)
 
@@ -567,7 +600,80 @@ const AdminReports = () => {
     link.click()
     document.body.removeChild(link)
 
-    toast.success('Report exported successfully!', {
+    toast.success('CSV report exported successfully!', {
+      position: 'top-right',
+      autoClose: 2000,
+    })
+  }
+
+  const handleExportExcel = () => {
+    if (filteredData.length === 0) {
+      toast.error('No data to export', {
+        position: 'top-right',
+        autoClose: 3000,
+      })
+      return
+    }
+
+    const columns = getTableColumns()
+    const headers = columns.map(col => col.label)
+    
+    // Prepare data for Excel
+    const excelData = filteredData.map(row => {
+      const excelRow = {}
+      columns.forEach(col => {
+        const value = row[col.key]
+        let displayValue = value
+        
+        // Format numbers properly for Excel
+        if (typeof value === 'number') {
+          displayValue = value
+        } else if (col.key.includes('Freight') || col.key.includes('Advance') || col.key.includes('Balance') || 
+                   col.key.includes('Credit') || col.key.includes('Debit') || col.key.includes('Amount') || 
+                   col.key.includes('netAmount') || col.key.includes('Spend') || col.key.includes('Profit') ||
+                   col.key.includes('Expenses') || col.key.includes('TopUps') || col.key.includes('WalletBalance') ||
+                   col.key.includes('totalAmount') || col.key.includes('totalTopUps')) {
+          // Keep as number for Excel formulas
+          displayValue = value || 0
+        } else if (col.key === 'type') {
+          displayValue = value || (row.isBulk ? 'Bulk' : 'Normal')
+        } else if (col.key === 'lrNumber') {
+          displayValue = row.lrNumber || row.tripId || 'N/A'
+        } else if (col.key === 'route') {
+          displayValue = row.route || `${row.routeFrom || ''} - ${row.routeTo || ''}`
+        } else if (col.key === 'truck') {
+          displayValue = row.truckNumber || 'N/A'
+        } else if (col.key === 'lrSheet') {
+          displayValue = row.lrSheet || 'Not Received'
+        } else if (col.key === 'date') {
+          displayValue = row.date ? (typeof row.date === 'string' ? row.date.split('T')[0] : new Date(row.date).toISOString().split('T')[0]) : 'N/A'
+        } else if (col.key === 'closedDate') {
+          displayValue = row.closedDate || 'N/A'
+        } else if (col.key === 'closedTime') {
+          displayValue = row.closedTime || 'N/A'
+        }
+        
+        excelRow[col.label] = displayValue || ''
+      })
+      return excelRow
+    })
+
+    // Create workbook and worksheet
+    const worksheet = XLSX.utils.json_to_sheet(excelData)
+    const workbook = XLSX.utils.book_new()
+    
+    // Set column widths for better readability
+    const columnWidths = columns.map(() => ({ wch: 15 }))
+    worksheet['!cols'] = columnWidths
+    
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Report')
+    
+    // Generate Excel file
+    const fileName = `${reportType.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}.xlsx`
+    XLSX.writeFile(workbook, fileName)
+
+    toast.success('Excel report exported successfully!', {
       position: 'top-right',
       autoClose: 2000,
     })
@@ -590,12 +696,19 @@ const AdminReports = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 sm:mb-6 gap-3 sm:gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-text-primary mb-1 sm:mb-2">Reports & Analytics</h1>
-          <p className="text-xs sm:text-sm text-text-secondary">Generate tabular reports and export as CSV</p>
+          <p className="text-xs sm:text-sm text-text-secondary">Generate tabular reports and export as Excel, CSV, or PDF</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={handleExportExcel}
+            className="btn-3d-primary flex items-center justify-center gap-2 px-4 py-2 text-sm sm:text-base whitespace-nowrap"
+          >
+            <FiDownload size={18} className="sm:w-5 sm:h-5" />
+            <span>Export Excel</span>
+          </button>
           <button
             onClick={handleExportCSV}
-            className="btn-3d-primary flex items-center justify-center gap-2 px-4 py-2 text-sm sm:text-base whitespace-nowrap"
+            className="btn-3d-secondary flex items-center justify-center gap-2 px-4 py-2 text-sm sm:text-base whitespace-nowrap"
           >
             <FiDownload size={18} className="sm:w-5 sm:h-5" />
             <span>Export CSV</span>

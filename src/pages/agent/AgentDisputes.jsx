@@ -40,7 +40,7 @@ const AgentDisputes = () => {
   const [lrSearchTerm, setLrSearchTerm] = useState('')
   const [formData, setFormData] = useState({
     lrNumber: '',
-    disputeType: 'Payment Dispute',
+    disputeType: 'DEFICIT (Freight Kam Enter Hua)',
     amount: '',
     reason: '',
   })
@@ -125,7 +125,7 @@ const AgentDisputes = () => {
     // Always open modal - let it handle showing active trips or error message
     setFormData({ 
       lrNumber: currentActiveTrips.length > 0 ? (currentActiveTrips[0]?.lrNumber || currentActiveTrips[0]?.tripId || '') : '', 
-      disputeType: 'Payment Dispute', 
+      disputeType: 'DEFICIT', 
       amount: '', 
       reason: '' 
     })
@@ -291,7 +291,7 @@ const AgentDisputes = () => {
                     {dispute.createdAt ? new Date(dispute.createdAt).toLocaleDateString() : 'N/A'}
                   </td>
                   <td className="py-4 px-4 text-text-primary font-medium">{dispute.lrNumber || 'N/A'}</td>
-                  <td className="py-4 px-4 text-text-primary">{dispute.type || 'N/A'}</td>
+                  <td className="py-4 px-4 text-text-primary">{(dispute.type || 'N/A').split('(')[0].trim()}</td>
                   <td className="py-4 px-4 text-text-primary">Rs {(dispute.amount || 0).toLocaleString()}</td>
                   <td className="py-4 px-4">
                     <span
@@ -335,7 +335,7 @@ const AgentDisputes = () => {
           setModalActiveTrips([])
           setFormData({ 
             lrNumber: '', 
-            disputeType: 'Payment Dispute', 
+            disputeType: 'DEFICIT', 
             amount: '', 
             reason: '' 
           })
@@ -401,9 +401,9 @@ const AgentDisputes = () => {
               onChange={(e) => setFormData({ ...formData, disputeType: e.target.value })}
               className="input-field-3d"
             >
+              <option value="DEFICIT">DEFICIT</option>
+              <option value="EXCESS">EXCESS</option>
               <option value="Payment Dispute">Payment Dispute</option>
-              <option value="Amount Discrepancy">Amount Discrepancy</option>
-              <option value="Service Issue">Service Issue</option>
               <option value="Other">Other</option>
             </select>
           </div>
@@ -446,7 +446,7 @@ const AgentDisputes = () => {
                 setModalActiveTrips([])
                 setFormData({ 
                   lrNumber: '', 
-                  disputeType: 'Payment Dispute', 
+                  disputeType: 'DEFICIT', 
                   amount: '', 
                   reason: '' 
                 })
@@ -486,7 +486,7 @@ const AgentDisputes = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-1">Type</label>
-                <p className="text-text-primary">{selectedDispute.type || 'N/A'}</p>
+                <p className="text-text-primary">{(selectedDispute.type || 'N/A').split('(')[0].trim()}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-1">Amount</label>

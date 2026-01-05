@@ -243,15 +243,16 @@ export const DataProvider = ({ children }) => {
     try {
       const data = await tripAPI.updateDeductions(tripId, deductions)
       await loadTrips()
+      await loadLedger() // Reload ledger as deductions create ledger entries
       return data
     } catch (error) {
       throw new Error(error.message || 'Failed to update deductions')
     }
   }
 
-  const closeTrip = async (tripId, forceClose = false) => {
+  const closeTrip = async (tripId, options = {}) => {
     try {
-      const data = await tripAPI.closeTrip(tripId, forceClose)
+      const data = await tripAPI.closeTrip(tripId, options)
       await loadTrips()
       await loadLedger() // Reload ledger as closing creates ledger entries
       return data
@@ -358,7 +359,12 @@ export const DataProvider = ({ children }) => {
       // If resolving dispute
       if (updates.status === 'Resolved') {
         const resolvedBy = user?.id || null
-        const data = await disputeAPI.resolveDispute(id, resolvedBy)
+        // Include newFreight and other updates in the payload
+        const payload = {
+            resolvedBy,
+            ...updates
+        }
+        const data = await disputeAPI.resolveDispute(id, payload)
         await loadDisputes()
         await loadTrips() // Reload trips as resolving dispute changes trip status
         return data

@@ -1,20 +1,12 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { FiBell, FiSettings, FiUser } from 'react-icons/fi'
+import { FiUser } from 'react-icons/fi'
 import AgentFilter from '../AgentFilter'
 import LRSearch from '../LRSearch'
 
 const AdminNavbar = ({ isSidebarOpen = false, selectedAgentId = null, onAgentChange = null }) => {
-  const [showNotifications, setShowNotifications] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const { user, logout } = useAuth()
-
-  // Close notifications when sidebar opens on mobile
-  useEffect(() => {
-    if (isSidebarOpen) {
-      setShowNotifications(false)
-    }
-  }, [isSidebarOpen])
 
   return (
     <nav className="bg-dark border-b-2 border-secondary px-4 lg:px-6 py-3 sm:py-4 shadow-3d relative">
@@ -36,34 +28,8 @@ const AdminNavbar = ({ isSidebarOpen = false, selectedAgentId = null, onAgentCha
           <LRSearch />
         </div>
 
-        {/* Right Side Actions - Notifications, Settings, Profile */}
+        {/* Right Side Actions - Profile */}
         <div className={`flex items-center gap-2 sm:gap-4 relative z-[65] ${isSidebarOpen ? 'hidden lg:flex' : ''}`}>
-          {/* Notifications */}
-          <div className="relative z-[65]">
-            <button
-              onClick={() => setShowNotifications(!showNotifications)}
-              className="relative p-2 text-secondary hover:text-white hover:bg-primary rounded-lg transition-all shadow-3d hover:shadow-3d-hover z-[65]"
-            >
-              <FiBell size={20} />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-            </button>
-            {showNotifications && !isSidebarOpen && (
-              <div className="absolute right-0 mt-2 w-80 bg-background-light border-2 border-secondary rounded-lg shadow-3d z-[65] min-w-[280px] max-w-[90vw] sm:max-w-none">
-                <div className="p-4 border-b-2 border-secondary">
-                  <h3 className="text-text-primary font-semibold">Notifications</h3>
-                </div>
-                <div className="p-4">
-                  <p className="text-text-secondary text-sm">No new notifications</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Settings */}
-          <button className="p-2 text-secondary hover:text-white hover:bg-primary rounded-lg transition-all shadow-3d hover:shadow-3d-hover">
-            <FiSettings size={20} />
-          </button>
-
           {/* Profile */}
           <div className="relative z-[65]">
             <button

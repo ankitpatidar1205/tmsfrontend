@@ -2,7 +2,7 @@ import React, { useMemo, useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useData } from '../../context/DataContext'
 import { reportAPI } from '../../services/api'
-import { FiDollarSign, FiFileText, FiTruck, FiClock, FiCheckCircle } from 'react-icons/fi'
+import { FiDollarSign, FiFileText, FiTruck, FiClock, FiCheckCircle, FiCalendar } from 'react-icons/fi'
 import { Link } from 'react-router-dom'
 import LRSearch from '../../components/LRSearch'
 
@@ -10,6 +10,8 @@ const FinanceDashboard = () => {
   const { user } = useAuth()
   const { trips, ledger, loadTrips, loadLedger } = useData()
   const [dashboardStats, setDashboardStats] = useState(null)
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
 
   // Load data when component mounts
   useEffect(() => {
@@ -42,8 +44,31 @@ const FinanceDashboard = () => {
     }
   }
 
+  const filteredTrips = useMemo(() => {
+    let filtered = trips
+    
+    // Filter by date range
+    if (startDate) {
+      filtered = filtered.filter(t => {
+        const tripDate = new Date(t.date).toISOString().split('T')[0]
+        return tripDate >= startDate
+      })
+    }
+    if (endDate) {
+      filtered = filtered.filter(t => {
+        const tripDate = new Date(t.date).toISOString().split('T')[0]
+        return tripDate <= endDate
+      })
+    }
+    
+    return filtered
+  }, [trips, startDate, endDate])
+
   const kpiData = useMemo(() => {
     const today = new Date().toISOString().split('T')[0]
+    
+    // Use filtered trips for calculations if date filters are applied
+    const tripsForCalculation = (startDate || endDate) ? filteredTrips : trips
     
     // Always use API stats if available (even if 0), only fallback if API failed
     if (dashboardStats !== null && dashboardStats !== undefined) {
@@ -134,8 +159,19 @@ const FinanceDashboard = () => {
     
     // Fallback to local calculation
     
+    // Filter ledger by date range if filters are applied
+    let filteredLedger = ledger
+    if (startDate || endDate) {
+      filteredLedger = ledger.filter(l => {
+        const entryDate = l.date ? new Date(l.date).toISOString().split('T')[0] : (l.createdAt?.split('T')[0] || '')
+        if (startDate && entryDate < startDate) return false
+        if (endDate && entryDate > endDate) return false
+        return true
+      })
+    }
+    
     // Mid-payments today - Finance payments only (On-Trip Payment made by Finance)
-    const allFinancePayments = ledger.filter(l => 
+    const allFinancePayments = filteredLedger.filter(l => 
       l.type === 'On-Trip Payment' && l.paymentMadeBy === 'Finance'
     )
     console.log('All Finance payments in ledger:', allFinancePayments.length, allFinancePayments.map(p => ({ 
@@ -146,7 +182,7 @@ const FinanceDashboard = () => {
       paymentMadeBy: p.paymentMadeBy
     })))
     
-    const midPaymentsToday = ledger.filter(l => {
+    const midPaymentsToday = filteredLedger.filter(l => {
       // Handle date comparison - check both date field and createdAt
       let entryDate = ''
       if (l.date) {
@@ -190,18 +226,18 @@ const FinanceDashboard = () => {
     console.log('Mid-payments today (frontend calculation):', midPaymentsToday, 'Today:', today)
     
     // Top-ups today - All top-ups including Finance top-ups
-    const topUpsToday = ledger.filter(l => {
+    const topUpsToday = filteredLedger.filter(l => {
       const entryDate = l.date ? new Date(l.date).toISOString().split('T')[0] : (l.createdAt?.split('T')[0] || '')
       return entryDate === today && (l.type === 'Top-up' || l.type === 'Virtual Top-up')
     }).reduce((sum, e) => sum + (e.amount || 0), 0)
     
-    const activeTrips = trips.filter(t => t.status === 'Active').length
-    const lrSheetsNotReceived = trips.filter(t => !t.lrSheet || t.lrSheet === 'Not Received').length
-    const regularTrips = trips.filter(t => !t.isBulk).length
-    const bulkTrips = trips.filter(t => t.isBulk).length
+    const activeTrips = tripsForCalculation.filter(t => t.status === 'Active').length
+    const lrSheetsNotReceived = tripsForCalculation.filter(t => !t.lrSheet || t.lrSheet === 'Not Received').length
+    const regularTrips = tripsForCalculation.filter(t => !t.isBulk).length
+    const bulkTrips = tripsForCalculation.filter(t => t.isBulk).length
     
     // Bank-wise movements today - Enhanced with detailed summary
-    const todayLedgerEntries = ledger.filter(l => {
+    const todayLedgerEntries = filteredLedger.filter(l => {
       const entryDate = l.date || l.createdAt?.split('T')[0]
       return entryDate === today
     })
@@ -282,7 +318,7 @@ const FinanceDashboard = () => {
         },
         // Bank-wise Movements card removed as per user request
     ]
-  }, [trips, ledger, dashboardStats])
+  }, [trips, ledger, dashboardStats, filteredTrips, startDate, endDate])
 
   return (
     <div className="p-3 sm:p-6">
@@ -294,6 +330,49 @@ const FinanceDashboard = () => {
           </div>
           <div className="flex-1 max-w-md">
             <LRSearch />
+          </div>
+        </div>
+        
+        {/* Date Range Filters */}
+        <div className="card p-4 mb-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="flex items-center gap-2 text-text-secondary">
+              <FiCalendar size={18} />
+              <span className="text-sm font-medium">Date Range Filter:</span>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 flex-1">
+              <div className="flex-1 sm:flex-none">
+                <label className="block text-xs text-text-secondary mb-1">From Date</label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="input-field-3d w-full sm:w-auto"
+                />
+              </div>
+              <div className="flex-1 sm:flex-none">
+                <label className="block text-xs text-text-secondary mb-1">To Date</label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="input-field-3d w-full sm:w-auto"
+                />
+              </div>
+              {(startDate || endDate) && (
+                <div className="flex items-end">
+                  <button
+                    onClick={() => {
+                      setStartDate('')
+                      setEndDate('')
+                    }}
+                    className="btn-3d-secondary px-4 py-2 text-sm"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

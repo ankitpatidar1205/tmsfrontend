@@ -13,7 +13,7 @@ import {
   FiMenu,
   FiDollarSign,
 } from 'react-icons/fi'
-import logo from '../assets/new-logo.png'
+import logo from '../assets/logo.png'
 
 const AdminSidebar = ({ isMobileOpen: externalIsMobileOpen, setIsMobileOpen: setExternalIsMobileOpen }) => {
   const [isOpen, setIsOpen] = useState(true)
@@ -78,43 +78,36 @@ const AdminSidebar = ({ isMobileOpen: externalIsMobileOpen, setIsMobileOpen: set
         `}
       >
         <div className="flex flex-col h-full">
-          {/* Logo Section */}
-          <div className="flex items-center justify-between px-4 sm:px-6 py-4 sm:py-6 min-h-[90px] sm:min-h-[100px] border-b-2 border-secondary relative">
-            {/* Mobile Close Button - Inside Sidebar Top Right */}
-            <button
-              onClick={() => setMobileOpen(false)}
-              className="lg:hidden absolute top-3 right-3 p-2.5 bg-primary text-white rounded-lg hover:bg-opacity-90 transition-all shadow-lg z-20"
-              aria-label="Close menu"
-            >
-              <FiX size={22} />
-            </button>
-            
-            {isOpen && (
-              <div className="flex items-center gap-3 sm:gap-4 flex-1 pr-14 sm:pr-16 lg:pr-0">
-                <img 
-                  src={logo} 
-                  alt="TMS Logo" 
-                  className="h-10 sm:h-14 md:h-16 w-auto object-contain flex-shrink-0"
-                />
-                <span className="text-white font-bold text-base sm:text-lg md:text-xl whitespace-nowrap">Admin</span>
-              </div>
-            )}
-            {!isOpen && (
-              <div className="flex items-center justify-center mx-auto w-full">
-                <img 
-                  src={logo} 
-                  alt="TMS Logo" 
-                  className="h-10 sm:h-14 md:h-16 w-auto object-contain"
-                />
-              </div>
-            )}
-            <button
-              onClick={() => setIsOpen(!isOpen)}
-              className="hidden lg:block text-secondary hover:text-secondary-light transition-colors p-1 hover:bg-primary rounded ml-2"
-            >
-              <FiMenu size={20} />
-            </button>
-          </div>
+           {/* Logo Section */}
+           <div className="relative flex items-center justify-center py-4 min-h-[140px] border-b-2 border-secondary bg-white">
+                   {/* Mobile Close Button */}
+                   <button
+                     onClick={() => setMobileOpen(false)}
+                     className="lg:hidden absolute top-3 right-3 p-2.5 bg-primary text-white rounded-lg hover:bg-opacity-90 transition-all shadow-lg z-20"
+                     aria-label="Close menu"
+                   >
+                     <FiX size={22} />
+                   </button>
+       
+                   {/* CENTER LOGO */}
+                   <div className="w-full max-w-[180px] h-32 flex items-center justify-center p-2">
+                     <img
+                       src={logo}
+                       alt="TMS Logo"
+                       className="w-full h-full object-contain"
+                     />
+                   </div>
+       
+                   {/* Desktop Toggle Button (Right) */}
+                   <button
+                     onClick={() => setIsOpen(!isOpen)}
+                     className="hidden lg:block absolute right-4 text-gray-600 hover:text-primary transition-colors p-1 hover:bg-gray-100 rounded z-10"
+                   >
+                     <FiMenu size={20} />
+                   </button>
+                 </div>
+       
+
 
           {/* User Info */}
           {isOpen && user && (

@@ -10,7 +10,7 @@ const apiCall = async (endpoint, options = {}) => {
     },
     ...options,
   }
-  
+
   try {
     const response = await fetch(url, config)
 
@@ -112,6 +112,36 @@ export const branchAPI = {
   },
 }
 
+// Company APIs
+export const companyAPI = {
+  getCompanies: async (search = '') => {
+    const params = new URLSearchParams()
+    if (search) params.append('search', search)
+    const query = params.toString()
+    return apiCall(`/companies${query ? `?${query}` : ''}`)
+  },
+
+  createCompany: async (name, createdBy = null) => {
+    return apiCall('/companies', {
+      method: 'POST',
+      body: JSON.stringify({ name, createdBy }),
+    })
+  },
+
+  updateCompany: async (id, name) => {
+    return apiCall(`/companies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    })
+  },
+
+  deleteCompany: async (id) => {
+    return apiCall(`/companies/${id}`, {
+      method: 'DELETE',
+    })
+  },
+}
+
 // Trip APIs
 export const tripAPI = {
   getTrips: async (filters = {}) => {
@@ -120,6 +150,8 @@ export const tripAPI = {
     if (filters.branch) params.append('branch', filters.branch)
     if (filters.status) params.append('status', filters.status)
     if (filters.lrNumber) params.append('lrNumber', filters.lrNumber)
+    if (filters.startDate) params.append('startDate', filters.startDate)
+    if (filters.endDate) params.append('endDate', filters.endDate)
     if (filters.page) params.append('page', filters.page)
     if (filters.limit) params.append('limit', filters.limit)
 
@@ -151,6 +183,13 @@ export const tripAPI = {
     })
   },
 
+  getCompanyNames: async (searchTerm = '') => {
+    const params = new URLSearchParams()
+    if (searchTerm) params.append('search', searchTerm)
+    const query = params.toString()
+    return apiCall(`/trips/companies${query ? `?${query}` : ''}`)
+  },
+
   addPayment: async (tripId, paymentData) => {
     return apiCall(`/trips/${tripId}/payments`, {
       method: 'POST',
@@ -165,10 +204,11 @@ export const tripAPI = {
     })
   },
 
-  closeTrip: async (tripId, forceClose = false) => {
+  closeTrip: async (tripId, options = {}) => {
+    const { forceClose = false, closedBy = null, closedByRole = null } = options
     return apiCall(`/trips/${tripId}/close`, {
       method: 'POST',
-      body: JSON.stringify({ forceClose }),
+      body: JSON.stringify({ forceClose, closedBy, closedByRole }),
     })
   },
 
@@ -245,10 +285,10 @@ export const disputeAPI = {
     })
   },
 
-  resolveDispute: async (id, resolvedBy = null) => {
+  resolveDispute: async (id, data = {}) => {
     return apiCall(`/disputes/${id}/resolve`, {
       method: 'PUT',
-      body: JSON.stringify({ resolvedBy }),
+      body: JSON.stringify(data),
     })
   },
 }
@@ -321,6 +361,7 @@ export default {
   authAPI,
   userAPI,
   branchAPI,
+  companyAPI,
   tripAPI,
   ledgerAPI,
   disputeAPI,
