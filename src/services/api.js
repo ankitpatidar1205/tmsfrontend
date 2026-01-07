@@ -64,9 +64,13 @@ export const userAPI = {
   },
 
   updateUser: async (id, userData) => {
+    // Check if userData is FormData (has file)
+    const isFormData = userData instanceof FormData;
+
     return apiCall(`/users/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(userData),
+      body: isFormData ? userData : JSON.stringify(userData),
+      headers: isFormData ? {} : undefined, // Let browser set Content-Type for FormData (multipart/form-data)
     })
   },
 
@@ -152,6 +156,7 @@ export const tripAPI = {
     if (filters.lrNumber) params.append('lrNumber', filters.lrNumber)
     if (filters.startDate) params.append('startDate', filters.startDate)
     if (filters.endDate) params.append('endDate', filters.endDate)
+    if (filters.lrSheet) params.append('lrSheet', filters.lrSheet)
     if (filters.page) params.append('page', filters.page)
     if (filters.limit) params.append('limit', filters.limit)
 
@@ -299,6 +304,8 @@ export const reportAPI = {
     const params = new URLSearchParams()
     if (filters.agentId) params.append('agentId', filters.agentId)
     if (filters.branchId) params.append('branchId', filters.branchId)
+    if (filters.startDate) params.append('startDate', filters.startDate)
+    if (filters.endDate) params.append('endDate', filters.endDate)
 
     const query = params.toString()
     return apiCall(`/reports/dashboard${query ? `?${query}` : ''}`)

@@ -5,58 +5,49 @@ import { FiTruck, FiUsers, FiAlertCircle, FiFileText, FiCheckCircle, FiClock, Fi
 import { Link } from 'react-router-dom'
 import AgentFilter from '../../components/AgentFilter'
 
+import { reportAPI } from '../../services/api'
+
 const AdminDashboard = () => {
   const { user } = useAuth()
-  const { trips, ledger, disputes } = useData()
+  // trips/ledger/disputes no longer needed for stats, but keeping useData if needed for other things (e.g. AgentFilter might use context internally, but here we don't need to pass anything)
   const [selectedAgentId, setSelectedAgentId] = useState(null)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [stats, setStats] = useState({
+    activeTrips: 0,
+    completedTrips: 0,
+    tripsInDispute: 0, // Now matches backend naming
+    lrNotReceived: 0,
+    regularTrips: 0,
+    bulkTrips: 0,
+    totalAgents: 0,
+    totalTrucks: 0,
+    totalAuditLogs: 0 // New field
+  })
 
-  const filteredTrips = useMemo(() => {
-    let filtered = trips
-    
-    // Filter by agent
-    if (selectedAgentId) {
-      filtered = filtered.filter(t => 
-        t.agentId === selectedAgentId || 
-        t.agentId?._id === selectedAgentId ||
-        t.agentId?.id === selectedAgentId
-      )
+  // Fetch stats from backend
+  React.useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const filters = {
+          agentId: selectedAgentId,
+          startDate,
+          endDate
+        }
+        const data = await reportAPI.getDashboardStats(filters)
+        setStats(data)
+      } catch (error) {
+        console.error('Error fetching dashboard stats:', error)
+      }
     }
-    
-    // Filter by date range
-    if (startDate) {
-      filtered = filtered.filter(t => {
-        const tripDate = new Date(t.date).toISOString().split('T')[0]
-        return tripDate >= startDate
-      })
-    }
-    if (endDate) {
-      filtered = filtered.filter(t => {
-        const tripDate = new Date(t.date).toISOString().split('T')[0]
-        return tripDate <= endDate
-      })
-    }
-    
-    return filtered
-  }, [trips, selectedAgentId, startDate, endDate])
+    fetchStats()
+  }, [selectedAgentId, startDate, endDate])
 
   const kpiData = useMemo(() => {
-    const activeTrips = filteredTrips.filter(t => t.status === 'Active').length
-    const completedTrips = filteredTrips.filter(t => t.status === 'Completed').length
-    const tripsInDispute = filteredTrips.filter(t => t.status === 'Dispute').length
-    const lrNotReceived = filteredTrips.filter(t => !t.lrSheet || t.lrSheet === 'Not Received').length
-    const regularTrips = filteredTrips.filter(t => !t.isBulk).length
-    const bulkTrips = filteredTrips.filter(t => t.isBulk).length
-    const uniqueAgents = [...new Set(trips.map(t => t.agent).filter(Boolean))].length
-    const uniqueTrucks = [...new Set(trips.map(t => t.truckNumber).filter(Boolean))].length
-    const today = new Date().toISOString().split('T')[0]
-    const auditEventsToday = ledger.filter(l => l.createdAt?.split('T')[0] === today).length
-
     return [
       { 
         title: 'Active Trips', 
-        value: activeTrips.toString(), 
+        value: (stats.activeTrips || 0).toString(), 
         icon: FiTruck, 
         color: 'text-green-600',
         bgColor: 'bg-green-100',
@@ -64,7 +55,7 @@ const AdminDashboard = () => {
       },
       { 
         title: 'Completed Trips', 
-        value: completedTrips.toString(), 
+        value: (stats.completedTrips || 0).toString(), 
         icon: FiCheckCircle, 
         color: 'text-blue-600',
         bgColor: 'bg-blue-100',
@@ -72,7 +63,7 @@ const AdminDashboard = () => {
       },
       { 
         title: 'Trips In Dispute', 
-        value: tripsInDispute.toString(), 
+        value: (stats.tripsInDispute || 0).toString(), 
         icon: FiAlertCircle, 
         color: 'text-red-600',
         bgColor: 'bg-red-100',
@@ -80,7 +71,7 @@ const AdminDashboard = () => {
       },
       { 
         title: 'LR Not Received', 
-        value: lrNotReceived.toString(), 
+        value: (stats.lrNotReceived || 0).toString(), 
         icon: FiFileText, 
         color: 'text-yellow-600',
         bgColor: 'bg-yellow-100',
@@ -88,7 +79,7 @@ const AdminDashboard = () => {
       },
       { 
         title: 'Normal Trips', 
-        value: regularTrips.toString(), 
+        value: (stats.regularTrips || 0).toString(), 
         icon: FiTruck, 
         color: 'text-purple-600',
         bgColor: 'bg-purple-100',
@@ -96,7 +87,7 @@ const AdminDashboard = () => {
       },
       { 
         title: 'Bulk Trips', 
-        value: bulkTrips.toString(), 
+        value: (stats.bulkTrips || 0).toString(), 
         icon: FiTruck, 
         color: 'text-indigo-600',
         bgColor: 'bg-indigo-100',
@@ -104,30 +95,39 @@ const AdminDashboard = () => {
       },
       { 
         title: 'Total Agents', 
-        value: uniqueAgents.toString(), 
+        value: (stats.totalAgents || 0).toString(), 
         icon: FiUsers, 
         color: 'text-pink-600',
         bgColor: 'bg-pink-100',
         link: '/admin/profile'
       },
       { 
-        title: 'Total Trucks', 
-        value: uniqueTrucks.toString(), 
-        icon: FiTruck, 
+        title: 'Total Disputes', 
+        value: stats.disputeStats 
+          ? (
+            <>
+              {stats.disputeStats.total}
+              <span className="text-sm sm:text-base font-normal text-text-secondary ml-2">
+                (Open: {stats.disputeStats.open}, Resolved: {stats.disputeStats.resolved})
+              </span>
+            </>
+          )
+          : '0', 
+        icon: FiAlertCircle, 
         color: 'text-cyan-600',
         bgColor: 'bg-cyan-100',
-        link: '/admin/trips'
+        link: '/admin/disputes'
       },
       { 
-        title: 'Audit Events Today', 
-        value: auditEventsToday.toString(), 
+        title: 'Total Audit Events', 
+        value: (stats.totalAuditLogs || 0).toString(), 
         icon: FiClock, 
         color: 'text-orange-600',
         bgColor: 'bg-orange-100',
         link: '/admin/audit-logs'
       },
     ]
-  }, [filteredTrips, trips, ledger])
+  }, [stats])
 
   return (
     <div className="p-3 sm:p-6">

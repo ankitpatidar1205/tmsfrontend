@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { useData } from '../../context/DataContext'
 import { FiDownload, FiFilter, FiSearch, FiX } from 'react-icons/fi'
 import AgentFilter from '../../components/AgentFilter'
+import { tripAPI } from '../../services/api'
 import { toast } from 'react-toastify'
 import * as XLSX from 'xlsx'
 
@@ -40,29 +41,37 @@ const AdminReports = () => {
   const [routeFilter, setRouteFilter] = useState('')
   const [lrSearchTerm, setLrSearchTerm] = useState('')
   const [showFilters, setShowFilters] = useState(true)
+  const [localTrips, setLocalTrips] = useState([])
+  const [isGenerated, setIsGenerated] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
   // Process data based on report type
   const processedData = useMemo(() => {
-    let filtered = [...trips]
+    // If we have explicitly generated a report (for Agent wise performance), use localTrips
+    // otherwise fall back to global trips
+    let sourceData = isGenerated ? localTrips : trips
+    let filtered = [...sourceData]
 
-    // Apply date filters
-    if (dateFrom) {
-      filtered = filtered.filter(t => {
-        const tripDate = t.date ? (typeof t.date === 'string' ? t.date.split('T')[0] : new Date(t.date).toISOString().split('T')[0]) : ''
-        return tripDate >= dateFrom
-      })
-    }
-    if (dateTo) {
-      filtered = filtered.filter(t => {
-        const tripDate = t.date ? (typeof t.date === 'string' ? t.date.split('T')[0] : new Date(t.date).toISOString().split('T')[0]) : ''
-        return tripDate <= dateTo
-      })
+    // Apply date filters - ONLY if not using generated report (generated report already filters by date)
+    if (!isGenerated) {
+      if (dateFrom) {
+        filtered = filtered.filter(t => {
+          const tripDate = t.date ? (typeof t.date === 'string' ? t.date.split('T')[0] : new Date(t.date).toISOString().split('T')[0]) : ''
+          return tripDate >= dateFrom
+        })
+      }
+      if (dateTo) {
+        filtered = filtered.filter(t => {
+          const tripDate = t.date ? (typeof t.date === 'string' ? t.date.split('T')[0] : new Date(t.date).toISOString().split('T')[0]) : ''
+          return tripDate <= dateTo
+        })
+      }
     }
 
     // Apply other filters based on report type
     if (reportType.includes('Trips') || reportType.includes('LR Sheets') || reportType.includes('Bulk trips') || reportType.includes('Regular trip')) {
-      if (selectedAgent) {
-        filtered = filtered.filter(t => t.agentId === parseInt(selectedAgent) || t.agent === selectedAgent)
+      if (selectedAgent && !isGenerated) {
+        filtered = filtered.filter(t => t.agentId === parseInt(selectedAgent) || t.agentId === selectedAgent || t.agent === selectedAgent)
       }
       if (tripType) {
         filtered = filtered.filter(t => 
@@ -382,9 +391,23 @@ const AdminReports = () => {
 
       default:
         // Trips - Detail
-        return filtered
+        // Flatten the structure for reporting (add deductions as top level fields)
+        return filtered.map(trip => {
+          const deductions = trip.deductions || {}
+          return {
+            ...trip,
+            cess: deductions.cess || 0,
+            kata: deductions.kata || 0,
+            excessTonnage: deductions.excessTonnage || 0,
+            halting: deductions.halting || 0,
+            expenses: deductions.expenses || 0,
+            beta: deductions.beta || 0,
+            others: deductions.others || 0,
+            othersReason: deductions.othersReason || '',
+          }
+        })
     }
-  }, [trips, ledger, reportType, dateFrom, dateTo, selectedAgent, tripType, status, lrSheet, truckFilter, routeFilter, lrSearchTerm])
+  }, [trips, localTrips, isGenerated, reportType, dateFrom, dateTo, selectedAgent, tripType, status, lrSheet, truckFilter, routeFilter, lrSearchTerm, ledger])
 
   const filteredData = processedData
 
@@ -491,9 +514,58 @@ const AdminReports = () => {
           { key: 'truck', label: 'Truck' },
           { key: 'freight', label: 'Freight' },
           { key: 'advance', label: 'Advance' },
+          { key: 'cess', label: 'Cess' },
+          { key: 'kata', label: 'Kata' },
+          { key: 'excessTonnage', label: 'Excess Tonnage' },
+          { key: 'halting', label: 'Halting' },
+          { key: 'expenses', label: 'Expenses' },
+          { key: 'beta', label: 'Beta' },
+          { key: 'others', label: 'Others' },
           { key: 'balance', label: 'Balance' },
         ]
     }
+  }
+
+  const handleGenerateReport = async () => {
+    // Only fetch if we are in a mode that benefits from API filtering
+    // or if the user explicitly wants to filter a large dataset
+    setIsLoading(true)
+    try {
+      const filters = {}
+      if (dateFrom) filters.startDate = dateFrom
+      if (dateTo) filters.endDate = dateTo
+      if (selectedAgent) filters.agentId = selectedAgent
+      if (status) filters.status = status
+      if (lrSheet) filters.lrSheet = lrSheet
+      
+      // If no filters are selected, warn the user (optional, but good for UX)
+      if (Object.keys(filters).length === 0 && !window.confirm('No filters selected. This will load all trips. Continue?')) {
+        setIsLoading(false)
+        return
+      }
+
+      console.log('Fetching report with filters:', filters)
+      const data = await tripAPI.getTrips(filters)
+      setLocalTrips(Array.isArray(data) ? data : [])
+      setIsGenerated(true)
+      
+      toast.success(`Report generated: ${Array.isArray(data) ? data.length : 0} records found`, {
+        position: 'top-right', 
+        autoClose: 2000 
+      })
+
+    } catch (error) {
+      console.error('Error generating report:', error)
+      toast.error('Failed to generate report')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleReset = () => {
+    clearFilters()
+    setIsGenerated(false)
+    setLocalTrips([])
   }
 
   const handleExportPDF = () => {
@@ -651,6 +723,8 @@ const AdminReports = () => {
           displayValue = row.closedDate || 'N/A'
         } else if (col.key === 'closedTime') {
           displayValue = row.closedTime || 'N/A'
+        } else if (['cess', 'kata', 'excessTonnage', 'halting', 'expenses', 'beta', 'others'].includes(col.key)) {
+           displayValue = row[col.key] || 0
         }
         
         excelRow[col.label] = displayValue || ''
@@ -737,7 +811,8 @@ const AdminReports = () => {
         </div>
 
         {showFilters && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-2">
                 Report Type
@@ -896,13 +971,29 @@ const AdminReports = () => {
               </div>
             </div>
 
-            <div className="flex items-end">
-              <button
-                onClick={clearFilters}
-                className="btn-3d-secondary px-4 py-2 w-full"
-              >
-                Clear All Filters
-              </button>
+            </div>
+            
+            <div className="flex items-end gap-2 lg:col-span-3 mt-2">
+                <button
+                    onClick={handleGenerateReport}
+                    disabled={isLoading}
+                    className="btn-3d-primary flex items-center justify-center gap-2 px-6 py-2 text-sm sm:text-base disabled:opacity-50"
+                >
+                    {isLoading ? (
+                        <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    ) : (
+                        <FiSearch size={18} />
+                    )}
+                    <span>Generate Report</span>
+                </button>
+                
+                <button
+                    onClick={handleReset}
+                    className="btn-3d-danger flex items-center justify-center gap-2 px-6 py-2 text-sm sm:text-base"
+                >
+                    <FiX size={18} />
+                    <span>Reset</span>
+                </button>
             </div>
           </div>
         )}
@@ -935,7 +1026,14 @@ const AdminReports = () => {
                       let displayValue = value
                       
                       // Format based on column type
-                      if (col.key.includes('Freight') || col.key.includes('Advance') || col.key.includes('Balance') || 
+                      if (col.key === 'date') {
+                        // Display date as DD/MM/YYYY
+                        if (!value) displayValue = 'N/A'
+                        else {
+                           const d = typeof value === 'string' ? new Date(value) : value
+                           displayValue = d.toLocaleDateString('en-GB') // en-GB uses DD/MM/YYYY
+                        }
+                      } else if (col.key.includes('Freight') || col.key.includes('Advance') || col.key.includes('Balance') || 
                           col.key.includes('Credit') || col.key.includes('Debit') || col.key.includes('Amount') || 
                           col.key.includes('netAmount')) {
                         displayValue = `Rs ${(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`

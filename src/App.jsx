@@ -37,6 +37,7 @@ import AgentDisputes from './pages/agent/AgentDisputes'
 
 // Shared Pages
 import TripView from './pages/TripView'
+import ProfileSettings from './pages/ProfileSettings'
 
 // Public Route Component
 const PublicRoute = ({ children }) => {
@@ -185,6 +186,16 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/admin/profile-settings"
+        element={
+          <ProtectedRoute allowedRoles={['Admin']}>
+            <AdminLayout>
+              <ProfileSettings />
+            </AdminLayout>
+          </ProtectedRoute>
+        }
+      />
 
       {/* Finance Routes */}
       <Route
@@ -233,6 +244,16 @@ function AppRoutes() {
           <ProtectedRoute allowedRoles={['Finance']}>
             <FinanceLayout>
               <AgentProfile />
+            </FinanceLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/finance/profile-settings"
+        element={
+          <ProtectedRoute allowedRoles={['Finance']}>
+            <FinanceLayout>
+              <ProfileSettings />
             </FinanceLayout>
           </ProtectedRoute>
         }
@@ -305,6 +326,16 @@ function AppRoutes() {
           <ProtectedRoute allowedRoles={['Agent']}>
             <AgentLayout>
               <AgentProfile />
+            </AgentLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/agent/profile-settings"
+        element={
+          <ProtectedRoute allowedRoles={['Agent']}>
+            <AgentLayout>
+              <ProfileSettings />
             </AgentLayout>
           </ProtectedRoute>
         }

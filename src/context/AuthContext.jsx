@@ -71,6 +71,7 @@ export const AuthProvider = ({ children }) => {
         role: response.role, // Role comes from database
         phone: response.phone,
         branch: response.branch || null,
+        profileImage: response.profileImage || '',
         token: response.token || `token-${Date.now()}`,
       }
 

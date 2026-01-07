@@ -62,7 +62,16 @@ const AdminDisputes = () => {
     originalFreight: 0,
     originalAdvance: 0,
     freightDiff: 0,
-    advanceDiff: 0
+    advanceDiff: 0,
+    // Deductions/Expenses
+    cess: '',
+    kata: '',
+    excessTonnage: '',
+    halting: '',
+    expenses: '',
+    beta: '',
+    others: '',
+    othersReason: ''
   })
 
   const handleView = (dispute) => {
@@ -77,6 +86,7 @@ const AdminDisputes = () => {
     // Default values if trip not found (shouldn't happen)
     const currentFreight = trip ? (trip.freight || 0) : 0
     const currentAdvance = trip ? (trip.advance || 0) : 0
+    const deductions = trip?.deductions || {}
 
     setResolveData({
         lrNumber: trip?.lrNumber || '',
@@ -92,7 +102,16 @@ const AdminDisputes = () => {
         originalFreight: currentFreight,
         originalAdvance: currentAdvance,
         freightDiff: 0,
-        advanceDiff: 0
+        advanceDiff: 0,
+        // Pre-fill deductions
+        cess: deductions.cess || 0,
+        kata: deductions.kata || 0,
+        excessTonnage: deductions.excessTonnage || 0,
+        halting: deductions.halting || 0,
+        expenses: deductions.expenses || 0,
+        beta: deductions.beta || 0,
+        others: deductions.others || 0,
+        othersReason: deductions.othersReason || ''
     })
     setSelectedDispute(dispute)
     setShowResolveModal(true)
@@ -479,6 +498,44 @@ const AdminDisputes = () => {
                             onChange={(e) => setResolveData({...resolveData, companyName: e.target.value})}
                             className="input-field-3d w-full"
                         />
+                    </div>
+                </div>
+
+                <hr className="border-secondary my-4" />
+
+                <h3 className="font-semibold text-text-primary mb-3">Expenses & Deductions</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-text-secondary mb-1">Cess</label>
+                        <input type="number" name="cess" value={resolveData.cess} onChange={(e) => setResolveData({...resolveData, cess: e.target.value})} className="input-field-3d w-full" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-text-secondary mb-1">Kata</label>
+                        <input type="number" name="kata" value={resolveData.kata} onChange={(e) => setResolveData({...resolveData, kata: e.target.value})} className="input-field-3d w-full" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-text-secondary mb-1">Excess Tonnage</label>
+                        <input type="number" name="excessTonnage" value={resolveData.excessTonnage} onChange={(e) => setResolveData({...resolveData, excessTonnage: e.target.value})} className="input-field-3d w-full" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-text-secondary mb-1">Halting</label>
+                        <input type="number" name="halting" value={resolveData.halting} onChange={(e) => setResolveData({...resolveData, halting: e.target.value})} className="input-field-3d w-full" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-text-secondary mb-1">Expenses</label>
+                        <input type="number" name="expenses" value={resolveData.expenses} onChange={(e) => setResolveData({...resolveData, expenses: e.target.value})} className="input-field-3d w-full" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-text-secondary mb-1">Beta</label>
+                        <input type="number" name="beta" value={resolveData.beta} onChange={(e) => setResolveData({...resolveData, beta: e.target.value})} className="input-field-3d w-full" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-text-secondary mb-1">Others</label>
+                        <input type="number" name="others" value={resolveData.others} onChange={(e) => setResolveData({...resolveData, others: e.target.value})} className="input-field-3d w-full" />
+                    </div>
+                     <div>
+                        <label className="block text-sm font-medium text-text-secondary mb-1">Others Reason</label>
+                        <input type="text" name="othersReason" value={resolveData.othersReason} onChange={(e) => setResolveData({...resolveData, othersReason: e.target.value})} className="input-field-3d w-full" placeholder="Reason..." />
                     </div>
                 </div>
 
