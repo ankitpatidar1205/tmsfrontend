@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { useData } from '../../context/DataContext'
-import { FiDownload, FiFilter } from 'react-icons/fi'
+import { FiDownload, FiFilter, FiSearch, FiX } from 'react-icons/fi'
 import AgentFilter from '../../components/AgentFilter'
 import { toast } from 'react-toastify'
 import * as XLSX from 'xlsx'
+import { tripAPI } from '../../services/api'
 
 const FinanceReports = () => {
   const { trips, agents, ledger, loadTrips, loadLedger, loadAgents } = useData()
@@ -37,13 +38,17 @@ const FinanceReports = () => {
   const [status, setStatus] = useState('')
   const [lrSheet, setLrSheet] = useState('')
   const [showFilters, setShowFilters] = useState(true)
+  const [localTrips, setLocalTrips] = useState([])
+  const [isGenerated, setIsGenerated] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
   // Process data based on report type
   const processedData = useMemo(() => {
-    let filtered = [...trips]
+    let sourceData = isGenerated ? localTrips : trips
+    let filtered = [...sourceData]
 
     // Apply date filters
-    if (dateFrom) {
+    if (dateFrom && !isGenerated) {
       filtered = filtered.filter(t => {
         const tripDate = t.date ? (typeof t.date === 'string' ? t.date.split('T')[0] : new Date(t.date).toISOString().split('T')[0]) : ''
         return tripDate >= dateFrom
@@ -58,8 +63,8 @@ const FinanceReports = () => {
 
     // Apply other filters based on report type
     if (reportType.includes('Trips') || reportType.includes('LR Sheets') || reportType.includes('Route') || reportType.includes('Agent Performance')) {
-      if (selectedAgent) {
-        filtered = filtered.filter(t => t.agentId === parseInt(selectedAgent) || t.agent === selectedAgent)
+      if (selectedAgent && !isGenerated) {
+        filtered = filtered.filter(t => t.agentId === parseInt(selectedAgent) || t.agentId === selectedAgent || t.agent === selectedAgent)
       }
       if (tripType) {
         filtered = filtered.filter(t => 
@@ -243,9 +248,23 @@ const FinanceReports = () => {
 
       default:
         // Trips - Detail
-        return filtered
+        // Flatten the structure for reporting (add deductions as top level fields)
+        return filtered.map(trip => {
+          const deductions = trip.deductions || {}
+          return {
+            ...trip,
+            cess: deductions.cess || 0,
+            kata: deductions.kata || 0,
+            excessTonnage: deductions.excessTonnage || 0,
+            halting: deductions.halting || 0,
+            expenses: deductions.expenses || 0,
+            beta: deductions.beta || 0,
+            others: deductions.others || 0,
+            othersReason: deductions.othersReason || '',
+          }
+        })
     }
-  }, [trips, ledger, reportType, dateFrom, dateTo, selectedAgent, tripType, status, lrSheet])
+  }, [trips, localTrips, isGenerated, ledger, reportType, dateFrom, dateTo, selectedAgent, tripType, status, lrSheet])
 
   const filteredData = processedData
 
@@ -300,11 +319,59 @@ const FinanceReports = () => {
           { key: 'status', label: 'Status' },
           { key: 'lrSheet', label: 'LR Sheet' },
           { key: 'route', label: 'Route' },
+          { key: 'truck', label: 'Truck' },
           { key: 'freight', label: 'Freight' },
           { key: 'advance', label: 'Advance' },
+          { key: 'cess', label: 'Cess' },
+          { key: 'kata', label: 'Kata' },
+          { key: 'excessTonnage', label: 'Excess Tonnage' },
+          { key: 'halting', label: 'Halting' },
+          { key: 'expenses', label: 'Expenses' },
+          { key: 'beta', label: 'Beta' },
+          { key: 'others', label: 'Others' },
           { key: 'balance', label: 'Balance' },
         ]
     }
+  }
+
+  const handleGenerateReport = async () => {
+    setIsLoading(true)
+    try {
+      const filters = {}
+      if (dateFrom) filters.startDate = dateFrom
+      if (dateTo) filters.endDate = dateTo
+      if (selectedAgent) filters.agentId = selectedAgent
+      if (status) filters.status = status
+      if (lrSheet) filters.lrSheet = lrSheet
+      
+      // If no filters are selected, warn the user (optional)
+      if (Object.keys(filters).length === 0 && !window.confirm('No filters selected. This will load all trips. Continue?')) {
+        setIsLoading(false)
+        return
+      }
+
+      console.log('Fetching report with filters:', filters)
+      const data = await tripAPI.getTrips(filters)
+      setLocalTrips(Array.isArray(data) ? data : [])
+      setIsGenerated(true)
+      
+      toast.success(`Report generated: ${Array.isArray(data) ? data.length : 0} records found`, {
+        position: 'top-right', 
+        autoClose: 2000 
+      })
+
+    } catch (error) {
+      console.error('Error generating report:', error)
+      toast.error('Failed to generate report')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleReset = () => {
+    clearFilters()
+    setIsGenerated(false)
+    setLocalTrips([])
   }
 
   const handleExportPDF = () => {
@@ -641,6 +708,29 @@ const FinanceReports = () => {
                 Clear All Filters
               </button>
             </div>
+            
+            <div className="flex items-end gap-2 lg:col-span-3 mt-2">
+                <button
+                    onClick={handleGenerateReport}
+                    disabled={isLoading}
+                    className="btn-3d-primary flex items-center justify-center gap-2 px-6 py-2 text-sm sm:text-base disabled:opacity-50"
+                >
+                    {isLoading ? (
+                        <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    ) : (
+                        <FiSearch size={18} />
+                    )}
+                    <span>Generate Report</span>
+                </button>
+                
+                <button
+                    onClick={handleReset}
+                    className="btn-3d-danger flex items-center justify-center gap-2 px-6 py-2 text-sm sm:text-base"
+                >
+                    <FiX size={18} />
+                    <span>Reset</span>
+                </button>
+            </div>
           </div>
         )}
       </div>
@@ -672,7 +762,14 @@ const FinanceReports = () => {
                       let displayValue = value
                       
                       // Format based on column type
-                      if (col.key.includes('Freight') || col.key.includes('Advance') || col.key.includes('Balance') || 
+                      if (col.key === 'date') {
+                        // Display date as DD/MM/YYYY
+                        if (!value) displayValue = 'N/A'
+                        else {
+                           const d = typeof value === 'string' ? new Date(value) : value
+                           displayValue = d.toLocaleDateString('en-GB') // en-GB uses DD/MM/YYYY
+                        }
+                      } else if (col.key.includes('Freight') || col.key.includes('Advance') || col.key.includes('Balance') || 
                           col.key.includes('Credit') || col.key.includes('Debit') || col.key.includes('Amount') || 
                           col.key.includes('netAmount') || col.key.includes('Spend') || col.key.includes('Profit') ||
                           col.key.includes('Expenses') || col.key.includes('TopUps') || col.key.includes('WalletBalance')) {

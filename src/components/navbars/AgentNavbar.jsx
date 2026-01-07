@@ -1,11 +1,15 @@
 import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { FiUser } from 'react-icons/fi'
 import LRSearch from '../LRSearch'
 
+import BaseUrl from '../../utils/BaseUrl'
+
 const AgentNavbar = ({ isSidebarOpen = false }) => {
   const [showProfile, setShowProfile] = useState(false)
   const { user, logout } = useAuth()
+  const navigate = useNavigate()
 
   return (
     <nav className="bg-dark border-b-2 border-secondary px-4 lg:px-6 py-3 sm:py-4 shadow-3d relative">
@@ -33,8 +37,22 @@ const AgentNavbar = ({ isSidebarOpen = false }) => {
               onClick={() => setShowProfile(!showProfile)}
               className="flex items-center gap-2 p-2 hover:bg-primary rounded-lg transition-all z-[65]"
             >
-              <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center shadow-3d">
-                <FiUser className="text-white" size={16} />
+              <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center shadow-3d overflow-hidden">
+                {user?.profileImage ? (
+                  <img 
+                    src={user.profileImage.startsWith('http') ? user.profileImage : `${BaseUrl.replace('/api', '')}/${user.profileImage.replace(/\\/g, '/')}`} 
+                    alt="Profile" 
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.target.onerror = null; 
+                      e.target.style.display = 'none';
+                      e.target.nextSibling.style.display = 'block';
+                    }}
+                  />
+                ) : (
+                  <FiUser className="text-white" size={16} />
+                )}
+                <FiUser className="text-white hidden" size={16} />
               </div>
               <div className="hidden md:block text-left">
                 <p className="text-white text-sm font-medium">{user?.name || 'Agent'}</p>
@@ -47,11 +65,20 @@ const AgentNavbar = ({ isSidebarOpen = false }) => {
             {showProfile && (
               <div className="absolute right-0 mt-2 w-48 bg-background-light border-2 border-secondary rounded-lg shadow-3d z-[65]">
                 <div className="p-2">
-                  <button className="w-full text-left px-4 py-2 text-text-secondary hover:bg-primary hover:text-white rounded-lg transition-all text-sm">
+                  <button 
+                    onClick={() => {
+                      setShowProfile(false)
+                      navigate('/agent/profile-settings')
+                    }}
+                    className="w-full text-left px-4 py-2 text-text-secondary hover:bg-primary hover:text-white rounded-lg transition-all text-sm"
+                  >
                     Profile Settings
                   </button>
                   <button
-                    onClick={logout}
+                    onClick={() => {
+                      setShowProfile(false)
+                      logout()
+                    }}
                     className="w-full text-left px-4 py-2 text-text-secondary hover:bg-red-600 hover:text-white rounded-lg transition-all text-sm"
                   >
                     Logout

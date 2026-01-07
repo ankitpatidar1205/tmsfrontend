@@ -40,7 +40,7 @@ const AgentDisputes = () => {
   const [lrSearchTerm, setLrSearchTerm] = useState('')
   const [formData, setFormData] = useState({
     lrNumber: '',
-    disputeType: 'DEFICIT (Freight Kam Enter Hua)',
+    disputeType: 'Payment Dispute',
     amount: '',
     reason: '',
   })
@@ -125,7 +125,7 @@ const AgentDisputes = () => {
     // Always open modal - let it handle showing active trips or error message
     setFormData({ 
       lrNumber: currentActiveTrips.length > 0 ? (currentActiveTrips[0]?.lrNumber || currentActiveTrips[0]?.tripId || '') : '', 
-      disputeType: 'DEFICIT', 
+      disputeType: 'Payment Dispute', 
       amount: '', 
       reason: '' 
     })
@@ -401,9 +401,8 @@ const AgentDisputes = () => {
               onChange={(e) => setFormData({ ...formData, disputeType: e.target.value })}
               className="input-field-3d"
             >
-              <option value="DEFICIT">DEFICIT</option>
-              <option value="EXCESS">EXCESS</option>
               <option value="Payment Dispute">Payment Dispute</option>
+              <option value="Service Issue">Service Issue</option>
               <option value="Other">Other</option>
             </select>
           </div>
@@ -446,7 +445,7 @@ const AgentDisputes = () => {
                 setModalActiveTrips([])
                 setFormData({ 
                   lrNumber: '', 
-                  disputeType: 'DEFICIT', 
+                  disputeType: 'Payment Dispute', 
                   amount: '', 
                   reason: '' 
                 })

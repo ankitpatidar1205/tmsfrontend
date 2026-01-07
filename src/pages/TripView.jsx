@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
-import { FiArrowLeft, FiUpload, FiX, FiAlertCircle, FiCheckCircle, FiFile, FiEye, FiInfo } from 'react-icons/fi'
+import { FiArrowLeft, FiUpload, FiX, FiAlertCircle, FiCheckCircle, FiFile, FiEye, FiInfo, FiTrash } from 'react-icons/fi'
 import { toast } from 'react-toastify'
 import BaseUrl from '../utils/BaseUrl'
 
@@ -17,9 +17,9 @@ const TripView = () => {
   const [showDisputeModal, setShowDisputeModal] = useState(false)
   const [showCloseModal, setShowCloseModal] = useState(false)
   const [disputeForm, setDisputeForm] = useState({
-    type: 'DEFICIT (Freight Kam Enter Hua)',
     reason: '',
   })
+  const [viewAttachment, setViewAttachment] = useState(null)
   
   // Closing Deductions form (only shown when preparing to close)
   const [deductions, setDeductions] = useState({
@@ -350,10 +350,10 @@ const TripView = () => {
       return
     }
 
-    // Check max 4 files limit (NEW REQUIREMENT)
+    // Check max 10 files limit (NEW REQUIREMENT)
     const currentAttachments = trip.attachments || []
-    if (currentAttachments.length >= 4) {
-      toast.error('Maximum 4 attachments allowed per trip. Please delete an existing attachment first.', {
+    if (currentAttachments.length >= 10) {
+      toast.error('Maximum 10 attachments allowed per trip. Please delete an existing attachment first.', {
         position: 'top-right',
         autoClose: 3000,
       })
@@ -390,6 +390,26 @@ const TripView = () => {
     
     // Reset file input
     e.target.value = ''
+  }
+
+  const handleDeleteAttachment = async (attachmentId) => {
+    if (!window.confirm('Are you sure you want to delete this attachment?')) return
+
+    try {
+      const tripId = trip.id || trip._id
+      await deleteAttachment(tripId, attachmentId)
+      toast.success('Attachment deleted successfully')
+      
+      // Refresh trip data
+      setTimeout(async () => {
+        const updatedTrip = await getTripById(id)
+        if (updatedTrip) {
+          setTrip(updatedTrip)
+        }
+      }, 500)
+    } catch (error) {
+      toast.error(error.message || 'Failed to delete attachment')
+    }
   }
 
   const handleReplaceAttachment = async (attachmentId, e) => {
@@ -1516,9 +1536,6 @@ const TripView = () => {
             
             {canUploadAttachments && (
               <div className="mb-4">
-                <label className="block text-sm font-medium text-text-secondary mb-2">
-                  Upload Document (Max 4 files - Image/PDF only)
-                </label>
                 <div className="flex items-center gap-2">
                   <input
                     type="file"
@@ -1536,11 +1553,11 @@ const TripView = () => {
                   </label>
                 </div>
                 <p className="text-xs text-blue-600 mt-2">
-                  Maximum 4 attachments per trip. Only Finance and Admin can upload documents.
+                  Maximum 10 attachments per trip. Only Finance and Admin can upload documents.
                 </p>
                 {trip.attachments && trip.attachments.length > 0 && (
                   <p className="text-xs text-gray-600 mt-1">
-                    Current: {trip.attachments.length}/4 files
+                    Current: {trip.attachments.length}/10 files
                   </p>
                 )}
               </div>
@@ -1558,12 +1575,20 @@ const TripView = () => {
                 {trip.attachments.map((attachment, index) => {
                   // Get file name from originalName or filename
                   const fileName = attachment.originalName || attachment.filename || attachment.name || `File ${index + 1}`
-                  // Get file path for download/view - use filename or path
-                  const filePath = attachment.filename || attachment.path
-                  // Build download URL - backend serves files from /uploads route (not /api/uploads)
-                  // BaseUrl includes /api, so we need to remove it for static file serving
-                  const backendBaseUrl = BaseUrl.replace('/api', '') || 'http://localhost:5000'
-                  const downloadUrl = filePath ? `${backendBaseUrl}/uploads/${filePath}` : null
+                  
+                  // Get sanitized file name for URL construction
+                  const rawPath = attachment.filename || attachment.path || attachment.name || ''
+                  const cleanFileName = rawPath.split(/[/\\]/).pop()
+
+                  // Build download URL
+                  let downloadUrl;
+                  if (attachment.path && (attachment.path.startsWith('http') || attachment.path.startsWith('https'))) {
+                    downloadUrl = attachment.path;
+                  } else {
+                    const backendBaseUrl = BaseUrl.replace('/api', '') || 'http://localhost:5000'
+                    downloadUrl = cleanFileName ? `${backendBaseUrl}/uploads/${cleanFileName}` : null
+                  }
+                  const isPdf = cleanFileName?.toLowerCase().endsWith('.pdf')
                   
                   return (
                     <div key={attachment.id || attachment._id || attachment.filename || `attachment-${index}`} className="flex items-center justify-between p-3 bg-background rounded-lg border-2 border-secondary hover:shadow-md transition-shadow">
@@ -1581,35 +1606,43 @@ const TripView = () => {
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                         {downloadUrl && (
-                          <a
-                            href={downloadUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            onClick={() => setViewAttachment({ url: downloadUrl, name: fileName, isPdf })}
                             className="btn-3d-primary flex items-center gap-1 px-2 py-1 text-xs cursor-pointer hover:bg-primary hover:text-white transition-colors"
-                            title="View/Download file"
+                            title="View file"
                           >
                             <FiEye size={14} />
                             <span className="hidden sm:inline">View</span>
-                          </a>
+                          </button>
                         )}
                         {canReplaceAttachments && (
-                          <div>
-                            <input
-                              type="file"
-                              id={`replace-${attachment.id || attachment._id || attachment.filename || index}`}
-                              onChange={(e) => handleReplaceAttachment(attachment.id || attachment._id, e)}
-                              className="hidden"
-                              accept=".pdf,.jpg,.jpeg,.png,.gif,image/*"
-                            />
-                            <label
-                              htmlFor={`replace-${attachment.id || attachment._id || attachment.filename || index}`}
-                              className="btn-3d-secondary flex items-center gap-1 px-2 py-1 text-xs cursor-pointer"
-                              title="Replace document"
+                          <>
+                            <div>
+                              <input
+                                type="file"
+                                id={`replace-${attachment.id || attachment._id || attachment.filename || index}`}
+                                onChange={(e) => handleReplaceAttachment(attachment.id || attachment._id, e)}
+                                className="hidden"
+                                accept=".pdf,.jpg,.jpeg,.png,.gif,image/*"
+                              />
+                              <label
+                                htmlFor={`replace-${attachment.id || attachment._id || attachment.filename || index}`}
+                                className="btn-3d-secondary flex items-center gap-1 px-2 py-1 text-xs cursor-pointer"
+                                title="Replace document"
+                              >
+                                <FiUpload size={14} />
+                                <span className="hidden sm:inline">Replace</span>
+                              </label>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteAttachment(attachment.id || attachment._id)}
+                              className="btn-3d-secondary flex items-center gap-1 px-2 py-1 text-xs cursor-pointer bg-red-100 text-red-700 hover:bg-red-200 border-red-200"
+                              title="Delete document"
                             >
-                              <FiUpload size={14} />
-                              <span className="hidden sm:inline">Replace</span>
-                            </label>
-                          </div>
+                              <FiTrash size={14} />
+                              <span className="hidden sm:inline">Delete</span>
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -1622,6 +1655,55 @@ const TripView = () => {
           </div>
         </div>
       </div>
+
+      {/* Attachment View Modal */}
+      {viewAttachment && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black bg-opacity-75 backdrop-blur-sm" onClick={() => setViewAttachment(null)}>
+          <div className="bg-white rounded-lg shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-scale-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-bold text-gray-800 truncate pr-4">{viewAttachment.name}</h3>
+              <button 
+                onClick={() => setViewAttachment(null)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <FiX size={24} className="text-gray-500" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto bg-gray-100 p-4 flex items-center justify-center min-h-[300px]">
+              {viewAttachment.isPdf ? (
+                 <iframe 
+                   src={viewAttachment.url} 
+                   className="w-full h-full min-h-[60vh] rounded border shadow-sm" 
+                   title="Document Viewer"
+                 />
+              ) : (
+                <img 
+                  src={viewAttachment.url} 
+                  alt={viewAttachment.name} 
+                  className="max-w-full max-h-[75vh] object-contain rounded shadow-md" 
+                />
+              )}
+            </div>
+            <div className="p-4 border-t bg-gray-50 flex justify-end gap-3">
+               <a 
+                 href={viewAttachment.url} 
+                 download={viewAttachment.name}
+                 target="_blank"
+                 rel="noopener noreferrer"
+                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors shadow-sm flex items-center gap-2"
+               >
+                 <FiUpload className="rotate-180" /> Download
+               </a>
+               <button 
+                 onClick={() => setViewAttachment(null)}
+                 className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-medium transition-colors"
+               >
+                 Close
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Dispute Modal */}
       {showDisputeModal && (
@@ -1639,9 +1721,8 @@ const TripView = () => {
                   onChange={(e) => setDisputeForm({ ...disputeForm, type: e.target.value })}
                   className="input-field-3d"
                 >
-                  <option value="DEFICIT">DEFICIT</option>
-                  <option value="EXCESS">EXCESS</option>
                   <option value="Payment Dispute">Payment Dispute</option>
+                  <option value="Service Issue">Service Issue</option>
                   <option value="Other">Other</option>
                 </select>
               </div>
