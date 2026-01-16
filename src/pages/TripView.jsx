@@ -49,6 +49,10 @@ const TripView = () => {
     bank: '',
   })
   const [showFinalAmountModal, setShowFinalAmountModal] = useState(false)
+  
+  // Invoice Update State
+  const [invoiceNo, setInvoiceNo] = useState('')
+  const [showInvoiceUpdateModal, setShowInvoiceUpdateModal] = useState(false)
 
   // Load trip on mount and when trips data changes
   useEffect(() => {
@@ -128,6 +132,13 @@ const TripView = () => {
     }
     loadTrip()
   }, [id, trips, getTripById, navigate, user?.role])
+
+  // Sync invoice number when trip loads
+  useEffect(() => {
+    if (trip?.invoiceNumber) {
+      setInvoiceNo(trip.invoiceNumber)
+    }
+  }, [trip?.invoiceNumber])
 
   // Check if trip has open dispute (must be defined before use)
   const hasOpenDispute = trip?.status === 'Dispute' || trip?.status === 'In Dispute'
@@ -943,8 +954,85 @@ const TripView = () => {
                   <p className="text-text-primary">{trip.lrSheet || 'Not Received'}</p>
                 )}
               </div>
+              {(user?.role === 'Finance' || user?.role === 'Admin' || (trip.invoiceNumber && trip.invoiceNumber.trim() !== '')) && (
+                <div>
+                  <label className="block text-sm font-medium text-text-secondary mb-1">Invoice No</label>
+                  {((user?.role === 'Finance' || user?.role === 'Admin') && (trip.status === 'Active' || trip.status === 'Completed')) ? (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={invoiceNo}
+                          onChange={(e) => setInvoiceNo(e.target.value)}
+                          className="input-field-3d flex-1"
+                          placeholder="Enter Invoice No"
+                        />
+                        {invoiceNo !== (trip.invoiceNumber || '') && (
+                          <button
+                            onClick={() => setShowInvoiceUpdateModal(true)}
+                            className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 shadow-sm font-medium text-sm transition-colors"
+                          >
+                            Update
+                          </button>
+                        )}
+                        {invoiceNo !== (trip.invoiceNumber || '') && (
+                          <button
+                            onClick={() => setInvoiceNo(trip.invoiceNumber || '')}
+                            className="bg-gray-200 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-300 shadow-sm font-medium text-sm transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-text-primary font-medium">{trip.invoiceNumber || 'N/A'}</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
+
+      {/* Invoice Update Confirmation Modal */}
+      {showInvoiceUpdateModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm">
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-6 animate-scale-in border-2 border-secondary">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">Confirm Invoice Update</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to update the Invoice Number for LR <strong>{trip.lrNumber}</strong> to <span className="font-bold text-blue-600">{invoiceNo}</span>?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowInvoiceUpdateModal(false)
+                  setInvoiceNo(trip.invoiceNumber || '')
+                }}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const tripId = trip.id || trip._id
+                    await updateTrip(tripId, { invoiceNumber: invoiceNo })
+                    toast.success('Invoice Number updated successfully')
+                    setShowInvoiceUpdateModal(false)
+                    // Update trip locally to reflect change immediately (though getTripById usually refreshes it)
+                    setTrip(prev => ({ ...prev, invoiceNumber: invoiceNo }))
+                  } catch (error) {
+                    toast.error(error.message || 'Failed to update Invoice Number')
+                  }
+                }}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium shadow-md transition-colors"
+              >
+                Confirm Update
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
           {/* Initial Financials */}
           <div className="card">

@@ -2,9 +2,9 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { useData } from '../../context/DataContext'
 import { FiDownload, FiFilter, FiSearch, FiX } from 'react-icons/fi'
 import AgentFilter from '../../components/AgentFilter'
+import { tripAPI } from '../../services/api'
 import { toast } from 'react-toastify'
 import * as XLSX from 'xlsx'
-import { tripAPI } from '../../services/api'
 
 const FinanceReports = () => {
   const { trips, agents, ledger, loadTrips, loadLedger, loadAgents } = useData()
@@ -37,6 +37,9 @@ const FinanceReports = () => {
   const [tripType, setTripType] = useState('')
   const [status, setStatus] = useState('')
   const [lrSheet, setLrSheet] = useState('')
+  const [truckFilter, setTruckFilter] = useState('')
+  const [routeFilter, setRouteFilter] = useState('')
+  const [lrSearchTerm, setLrSearchTerm] = useState('')
   const [showFilters, setShowFilters] = useState(true)
   const [localTrips, setLocalTrips] = useState([])
   const [isGenerated, setIsGenerated] = useState(false)
@@ -44,25 +47,29 @@ const FinanceReports = () => {
 
   // Process data based on report type
   const processedData = useMemo(() => {
+    // If we have explicitly generated a report (for Agent wise performance), use localTrips
+    // otherwise fall back to global trips
     let sourceData = isGenerated ? localTrips : trips
     let filtered = [...sourceData]
 
-    // Apply date filters
-    if (dateFrom && !isGenerated) {
-      filtered = filtered.filter(t => {
-        const tripDate = t.date ? (typeof t.date === 'string' ? t.date.split('T')[0] : new Date(t.date).toISOString().split('T')[0]) : ''
-        return tripDate >= dateFrom
-      })
-    }
-    if (dateTo) {
-      filtered = filtered.filter(t => {
-        const tripDate = t.date ? (typeof t.date === 'string' ? t.date.split('T')[0] : new Date(t.date).toISOString().split('T')[0]) : ''
-        return tripDate <= dateTo
-      })
+    // Apply date filters - ONLY if not using generated report (generated report already filters by date)
+    if (!isGenerated) {
+      if (dateFrom) {
+        filtered = filtered.filter(t => {
+          const tripDate = t.date ? (typeof t.date === 'string' ? t.date.split('T')[0] : new Date(t.date).toISOString().split('T')[0]) : ''
+          return tripDate >= dateFrom
+        })
+      }
+      if (dateTo) {
+        filtered = filtered.filter(t => {
+          const tripDate = t.date ? (typeof t.date === 'string' ? t.date.split('T')[0] : new Date(t.date).toISOString().split('T')[0]) : ''
+          return tripDate <= dateTo
+        })
+      }
     }
 
     // Apply other filters based on report type
-    if (reportType.includes('Trips') || reportType.includes('LR Sheets') || reportType.includes('Route') || reportType.includes('Agent Performance')) {
+    if (reportType.includes('Trips') || reportType.includes('LR Sheets') || reportType.includes('Bulk trips') || reportType.includes('Regular trip')) {
       if (selectedAgent && !isGenerated) {
         filtered = filtered.filter(t => t.agentId === parseInt(selectedAgent) || t.agentId === selectedAgent || t.agent === selectedAgent)
       }
@@ -82,10 +89,140 @@ const FinanceReports = () => {
           filtered = filtered.filter(t => t.lrSheet?.includes(lrSheet))
         }
       }
+      if (truckFilter) {
+        filtered = filtered.filter(t => 
+          t.truckNumber?.toLowerCase().includes(truckFilter.toLowerCase())
+        )
+      }
+      if (routeFilter) {
+        filtered = filtered.filter(t => 
+          t.route?.toLowerCase().includes(routeFilter.toLowerCase()) ||
+          t.routeFrom?.toLowerCase().includes(routeFilter.toLowerCase()) ||
+          t.routeTo?.toLowerCase().includes(routeFilter.toLowerCase())
+        )
+      }
+      if (lrSearchTerm) {
+        filtered = filtered.filter(t => 
+          t.lrNumber?.toLowerCase().includes(lrSearchTerm.toLowerCase()) ||
+          t.tripId?.toLowerCase().includes(lrSearchTerm.toLowerCase())
+        )
+      }
     }
 
     // Process based on report type
     switch (reportType) {
+      case 'Trips - Summary by Company':
+        const companySummary = {}
+        filtered.forEach(trip => {
+          const company = trip.companyName || 'Unknown'
+          if (!companySummary[company]) {
+            companySummary[company] = {
+              company,
+              totalTrips: 0,
+              totalFreight: 0,
+              totalAdvance: 0,
+              totalBalance: 0,
+            }
+          }
+          companySummary[company].totalTrips++
+          companySummary[company].totalFreight += (trip.freight || trip.freightAmount || 0)
+          companySummary[company].totalAdvance += (trip.advance || trip.advancePaid || 0)
+          companySummary[company].totalBalance += (trip.balance || trip.balanceAmount || 0)
+        })
+        return Object.values(companySummary)
+
+      case 'Trips - Summary by Agent':
+        const agentSummary = {}
+        filtered.forEach(trip => {
+          const agent = trip.agent || 'Unknown'
+          if (!agentSummary[agent]) {
+            agentSummary[agent] = {
+              agent,
+              totalTrips: 0,
+              totalFreight: 0,
+              totalAdvance: 0,
+              totalBalance: 0,
+            }
+          }
+          agentSummary[agent].totalTrips++
+          agentSummary[agent].totalFreight += (trip.freight || trip.freightAmount || 0)
+          agentSummary[agent].totalAdvance += (trip.advance || trip.advancePaid || 0)
+          agentSummary[agent].totalBalance += (trip.balance || trip.balanceAmount || 0)
+        })
+        return Object.values(agentSummary)
+
+      case 'Trips - Summary by Truck':
+        const truckSummary = {}
+        filtered.forEach(trip => {
+          const truck = trip.truckNumber || 'Unknown'
+          if (!truckSummary[truck]) {
+            truckSummary[truck] = {
+              truck,
+              totalTrips: 0,
+              totalFreight: 0,
+              totalAdvance: 0,
+              totalBalance: 0,
+            }
+          }
+          truckSummary[truck].totalTrips++
+          truckSummary[truck].totalFreight += (trip.freight || trip.freightAmount || 0)
+          truckSummary[truck].totalAdvance += (trip.advance || trip.advancePaid || 0)
+          truckSummary[truck].totalBalance += (trip.balance || trip.balanceAmount || 0)
+        })
+        return Object.values(truckSummary)
+
+      case 'Bulk trips - Summary by Truck':
+        const bulkTrips = filtered.filter(t => t.isBulk)
+        const bulkTruckSummary = {}
+        bulkTrips.forEach(trip => {
+          const truck = trip.truckNumber || 'Unknown'
+          if (!bulkTruckSummary[truck]) {
+            bulkTruckSummary[truck] = {
+              truck,
+              totalTrips: 0,
+            }
+          }
+          bulkTruckSummary[truck].totalTrips++
+        })
+        return Object.values(bulkTruckSummary)
+
+      case 'Normal trip - All':
+        return filtered.filter(t => !t.isBulk)
+
+      case 'Trips - Summary by Status':
+        const statusSummary = {}
+        filtered.forEach(trip => {
+          const tripStatus = trip.status || 'Unknown'
+          if (!statusSummary[tripStatus]) {
+            statusSummary[tripStatus] = {
+              status: tripStatus,
+              totalTrips: 0,
+              totalFreight: 0,
+              totalAdvance: 0,
+              totalBalance: 0,
+            }
+          }
+          statusSummary[tripStatus].totalTrips++
+          statusSummary[tripStatus].totalFreight += (trip.freight || trip.freightAmount || 0)
+          statusSummary[tripStatus].totalAdvance += (trip.advance || trip.advancePaid || 0)
+          statusSummary[tripStatus].totalBalance += (trip.balance || trip.balanceAmount || 0)
+        })
+        return Object.values(statusSummary)
+
+      case 'LR Sheets - Summary by Received/Not Received':
+        const lrSummary = {
+          'Received': { status: 'Received', count: 0 },
+          'Not Received': { status: 'Not Received', count: 0 }
+        }
+        filtered.forEach(trip => {
+          if (trip.lrSheet && trip.lrSheet !== 'Not Received') {
+            lrSummary['Received'].count++
+          } else {
+            lrSummary['Not Received'].count++
+          }
+        })
+        return Object.values(lrSummary)
+
       case 'Ledger - Summary by Bank':
         let ledgerFiltered = [...ledger]
         if (dateFrom) {
@@ -123,6 +260,40 @@ const FinanceReports = () => {
         })
         return Object.values(bankSummary)
 
+      case 'Ledger - Top ups by Agent':
+        let topUpFiltered = ledger.filter(l => l.type === 'Top-up')
+        if (dateFrom) {
+          topUpFiltered = topUpFiltered.filter(l => {
+            const entryDate = l.date || l.createdAt?.split('T')[0]
+            return entryDate >= dateFrom
+          })
+        }
+        if (dateTo) {
+          topUpFiltered = topUpFiltered.filter(l => {
+            const entryDate = l.date || l.createdAt?.split('T')[0]
+            return entryDate <= dateTo
+          })
+        }
+        if (selectedAgent) {
+          topUpFiltered = topUpFiltered.filter(l => 
+            l.agentId === parseInt(selectedAgent) || l.agent === selectedAgent
+          )
+        }
+        const topUpSummary = {}
+        topUpFiltered.forEach(entry => {
+          const agent = entry.agent || 'Unknown'
+          if (!topUpSummary[agent]) {
+            topUpSummary[agent] = {
+              agent,
+              totalTopUps: 0,
+              totalAmount: 0,
+            }
+          }
+          topUpSummary[agent].totalTopUps++
+          topUpSummary[agent].totalAmount += (entry.amount || 0)
+        })
+        return Object.values(topUpSummary)
+
       case 'Route Profitability Heatmap':
         const routeProfitability = {}
         filtered.forEach(trip => {
@@ -157,6 +328,17 @@ const FinanceReports = () => {
           routeProfitability[route].totalProfit += ((trip.freight || trip.freightAmount || 0) - (trip.advance || trip.advancePaid || 0) - totalPayments - betaAmount + totalAdditions)
         })
         return Object.values(routeProfitability)
+
+      case 'Trip Closing Audit List':
+        return filtered
+          .filter(trip => trip.status === 'Completed' && trip.closedAt)
+          .map(trip => ({
+            ...trip,
+            closedDate: trip.closedAt ? new Date(trip.closedAt).toISOString().split('T')[0] : 'N/A',
+            closedTime: trip.closedAt ? new Date(trip.closedAt).toLocaleTimeString() : 'N/A',
+            finalBalance: trip.finalBalance || 0,
+          }))
+          .sort((a, b) => new Date(b.closedAt) - new Date(a.closedAt))
 
       case 'Agent Performance & Wallet History':
         const agentPerformance = {}
@@ -207,45 +389,6 @@ const FinanceReports = () => {
         
         return Object.values(agentPerformance)
 
-      case 'Bank-wise Monthly Spend':
-        // Same as Ledger Summary by Bank but with monthly grouping
-        let monthlyLedger = [...ledger]
-        if (dateFrom) {
-          monthlyLedger = monthlyLedger.filter(l => {
-            const entryDate = l.date || l.createdAt?.split('T')[0]
-            return entryDate >= dateFrom
-          })
-        }
-        if (dateTo) {
-          monthlyLedger = monthlyLedger.filter(l => {
-            const entryDate = l.date || l.createdAt?.split('T')[0]
-            return entryDate <= dateTo
-          })
-        }
-        const monthlyBankSummary = {}
-        monthlyLedger.forEach(entry => {
-          const bank = entry.bank || 'Cash'
-          const entryDate = entry.date || entry.createdAt?.split('T')[0]
-          const month = entryDate ? entryDate.substring(0, 7) : 'Unknown' // YYYY-MM format
-          const key = `${bank}_${month}`
-          if (!monthlyBankSummary[key]) {
-            monthlyBankSummary[key] = {
-              bank,
-              month,
-              totalSpend: 0,
-              totalCredit: 0,
-              totalDebit: 0,
-            }
-          }
-          if (entry.direction === 'Credit') {
-            monthlyBankSummary[key].totalCredit += (entry.amount || 0)
-          } else {
-            monthlyBankSummary[key].totalDebit += (entry.amount || 0)
-            monthlyBankSummary[key].totalSpend += (entry.amount || 0)
-          }
-        })
-        return Object.values(monthlyBankSummary)
-
       default:
         // Trips - Detail
         // Flatten the structure for reporting (add deductions as top level fields)
@@ -264,13 +407,55 @@ const FinanceReports = () => {
           }
         })
     }
-  }, [trips, localTrips, isGenerated, ledger, reportType, dateFrom, dateTo, selectedAgent, tripType, status, lrSheet])
+  }, [trips, localTrips, isGenerated, reportType, dateFrom, dateTo, selectedAgent, tripType, status, lrSheet, truckFilter, routeFilter, lrSearchTerm, ledger])
 
   const filteredData = processedData
 
   // Get table columns based on report type
   const getTableColumns = () => {
     switch (reportType) {
+      case 'Trips - Summary by Company':
+        return [
+          { key: 'company', label: 'Company' },
+          { key: 'totalTrips', label: 'Total Trips' },
+          { key: 'totalFreight', label: 'Total Freight' },
+          { key: 'totalAdvance', label: 'Total Advance' },
+          { key: 'totalBalance', label: 'Total Balance' },
+        ]
+      case 'Trips - Summary by Agent':
+        return [
+          { key: 'agent', label: 'Agent' },
+          { key: 'totalTrips', label: 'Total Trips' },
+          { key: 'totalFreight', label: 'Total Freight' },
+          { key: 'totalAdvance', label: 'Total Advance' },
+          { key: 'totalBalance', label: 'Total Balance' },
+        ]
+      case 'Trips - Summary by Truck':
+        return [
+          { key: 'truck', label: 'Truck' },
+          { key: 'totalTrips', label: 'Total Trips' },
+          { key: 'totalFreight', label: 'Total Freight' },
+          { key: 'totalAdvance', label: 'Total Advance' },
+          { key: 'totalBalance', label: 'Total Balance' },
+        ]
+      case 'Bulk trips - Summary by Truck':
+        return [
+          { key: 'truck', label: 'Truck' },
+          { key: 'totalTrips', label: 'Total Trips' },
+        ]
+      case 'Trips - Summary by Status':
+        return [
+          { key: 'status', label: 'Status' },
+          { key: 'totalTrips', label: 'Total Trips' },
+          { key: 'totalFreight', label: 'Total Freight' },
+          { key: 'totalAdvance', label: 'Total Advance' },
+          { key: 'totalBalance', label: 'Total Balance' },
+        ]
+      case 'LR Sheets - Summary by Received/Not Received':
+        return [
+          { key: 'status', label: 'LR Sheet Status' },
+          { key: 'count', label: 'Count' },
+        ]
       case 'Ledger - Summary by Bank':
         return [
           { key: 'bank', label: 'Bank' },
@@ -278,6 +463,12 @@ const FinanceReports = () => {
           { key: 'totalCredit', label: 'Total Credit' },
           { key: 'totalDebit', label: 'Total Debit' },
           { key: 'netAmount', label: 'Net Amount' },
+        ]
+      case 'Ledger - Top ups by Agent':
+        return [
+          { key: 'agent', label: 'Agent' },
+          { key: 'totalTopUps', label: 'Total Top-ups' },
+          { key: 'totalAmount', label: 'Total Amount' },
         ]
       case 'Route Profitability Heatmap':
         return [
@@ -287,6 +478,15 @@ const FinanceReports = () => {
           { key: 'totalAdvance', label: 'Total Advance' },
           { key: 'totalExpenses', label: 'Total Expenses' },
           { key: 'totalProfit', label: 'Total Profit' },
+        ]
+      case 'Trip Closing Audit List':
+        return [
+          { key: 'closedDate', label: 'Closed Date' },
+          { key: 'closedTime', label: 'Closed Time' },
+          { key: 'lrNumber', label: 'LR No' },
+          { key: 'agent', label: 'Agent' },
+          { key: 'route', label: 'Route' },
+          { key: 'finalBalance', label: 'Final Balance' },
         ]
       case 'Agent Performance & Wallet History':
         return [
@@ -301,16 +501,8 @@ const FinanceReports = () => {
           { key: 'currentWalletBalance', label: 'Current Wallet Balance' },
           { key: 'totalTopUps', label: 'Total Top-ups' },
         ]
-      case 'Bank-wise Monthly Spend':
-        return [
-          { key: 'bank', label: 'Bank' },
-          { key: 'month', label: 'Month' },
-          { key: 'totalSpend', label: 'Total Spend' },
-          { key: 'totalCredit', label: 'Total Credit' },
-          { key: 'totalDebit', label: 'Total Debit' },
-        ]
       default:
-        // Trips - Detail
+        // Trips - Detail or Normal trip - All
         return [
           { key: 'date', label: 'Date' },
           { key: 'lrNumber', label: 'LR No' },
@@ -335,6 +527,8 @@ const FinanceReports = () => {
   }
 
   const handleGenerateReport = async () => {
+    // Only fetch if we are in a mode that benefits from API filtering
+    // or if the user explicitly wants to filter a large dataset
     setIsLoading(true)
     try {
       const filters = {}
@@ -344,7 +538,7 @@ const FinanceReports = () => {
       if (status) filters.status = status
       if (lrSheet) filters.lrSheet = lrSheet
       
-      // If no filters are selected, warn the user (optional)
+      // If no filters are selected, warn the user (optional, but good for UX)
       if (Object.keys(filters).length === 0 && !window.confirm('No filters selected. This will load all trips. Continue?')) {
         setIsLoading(false)
         return
@@ -374,6 +568,48 @@ const FinanceReports = () => {
     setLocalTrips([])
   }
 
+  // Helper to format values consistently across all exports
+  const getFormattedValue = (row, colKey, isExcel = false) => {
+    const value = row[colKey]
+    
+    // 1. Handle special mappings (columns where key doesn't match data property)
+    if (colKey === 'truck') return row.truckNumber || 'N/A'
+    if (colKey === 'route') return row.route || `${row.routeFrom || ''} - ${row.routeTo || ''}`
+    if (colKey === 'lrNumber') return row.lrNumber || row.tripId || 'N/A'
+    if (colKey === 'lrSheet') return row.lrSheet || 'Not Received'
+    if (colKey === 'type') return value || (row.isBulk ? 'Bulk' : 'Normal')
+    if (colKey === 'date') {
+      return row.date ? (typeof row.date === 'string' ? row.date.split('T')[0] : new Date(row.date).toISOString().split('T')[0]) : 'N/A'
+    }
+    if (colKey === 'closedDate') return row.closedDate || 'N/A'
+    if (colKey === 'closedTime') return row.closedTime || 'N/A'
+    if (['cess', 'kata', 'excessTonnage', 'halting', 'expenses', 'beta', 'others'].includes(colKey)) {
+       // Always return '0' as string for consistency in alignment and data presence
+       return (row[colKey] !== undefined && row[colKey] !== null && row[colKey] !== '') ? row[colKey].toString() : '0'
+    }
+
+    // 2. Handle Currency/Numbers
+    if (colKey.includes('Freight') || colKey.includes('Advance') || colKey.includes('Balance') || 
+        colKey.includes('Credit') || colKey.includes('Debit') || colKey.includes('Amount') || 
+        colKey.includes('netAmount') || colKey.includes('Spend') || colKey.includes('Profit') ||
+        colKey.includes('Expenses') || colKey.includes('TopUps') || colKey.includes('WalletBalance') ||
+        colKey.includes('totalAmount') || colKey.includes('totalTopUps')) {
+      
+      // For Excel, return as FORMATED STRING to enforce Left Alignment (matching headers) AND look like money.
+      // Note: This sacrifices 'number' type for 'visual' alignment and formatting as requested.
+      if (isExcel) {
+         const numVal = value !== undefined && value !== null ? value : 0;
+         return numVal.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+      }
+      return `Rs ${(value !== undefined && value !== null ? value : 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+    }
+
+    // 3. Default fallback
+    // If value is 0, return '0'. If null/undefined/empty, return '-'
+    if (value === 0) return '0'
+    return value || '-'
+  }
+
   const handleExportPDF = () => {
     if (filteredData.length === 0) {
       toast.error('No data to export', {
@@ -392,12 +628,12 @@ const FinanceReports = () => {
           <title>${reportType} Report</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
-            th { background-color: #f3f4f6; padding: 10px; text-align: left; border: 1px solid #ddd; font-weight: bold; }
-            td { padding: 8px; border: 1px solid #ddd; }
-            h1 { color: #333; margin-bottom: 10px; }
-            p { color: #666; margin-bottom: 20px; }
-            @media print { @page { margin: 1cm; } }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 10px; }
+            th { background-color: #f3f4f6; padding: 8px; text-align: left; border: 1px solid #ddd; font-weight: bold; }
+            td { padding: 6px; border: 1px solid #ddd; word-wrap: break-word; }
+            h1 { color: #333; margin-bottom: 10px; font-size: 18px; }
+            p { color: #666; margin-bottom: 20px; font-size: 12px; }
+            @media print { @page { margin: 0.5cm; } }
           </style>
         </head>
         <body>
@@ -413,10 +649,7 @@ const FinanceReports = () => {
               ${filteredData.map(row => `
                 <tr>
                   ${columns.map(col => {
-                    const value = row[col.key]
-                    const displayValue = typeof value === 'number' 
-                      ? value.toLocaleString('en-IN', { maximumFractionDigits: 2 })
-                      : (value || '')
+                    const displayValue = getFormattedValue(row, col.key, false) // false for PDF (formatted strings)
                     return `<td>${displayValue}</td>`
                   }).join('')}
                 </tr>
@@ -454,19 +687,22 @@ const FinanceReports = () => {
     
     const rows = filteredData.map(row => {
       return columns.map(col => {
-        const value = row[col.key]
-        if (typeof value === 'number') {
-          return value.toLocaleString('en-IN', { maximumFractionDigits: 2 })
+        // Escaping commas and quotes for CSV
+        let val = getFormattedValue(row, col.key, false) // Format as string for CSV
+        if (typeof val === 'string') {
+             val = val.replace(/"/g, '""'); // Escape double quotes
+             if (val.search(/("|,|\n)/g) >= 0) val = `"${val}"`; // Quote if contains comma, quote or newline
         }
-        return value || ''
+        return val
       })
     })
 
     const csvContent = [
       headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ...rows.map(row => row.join(','))
     ].join('\n')
 
+    // Create download link
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     const url = URL.createObjectURL(blob)
@@ -493,35 +729,12 @@ const FinanceReports = () => {
     }
 
     const columns = getTableColumns()
-    const headers = columns.map(col => col.label)
     
     // Prepare data for Excel
     const excelData = filteredData.map(row => {
       const excelRow = {}
       columns.forEach(col => {
-        const value = row[col.key]
-        let displayValue = value
-        
-        // Format numbers properly for Excel
-        if (typeof value === 'number') {
-          displayValue = value
-        } else if (col.key.includes('Freight') || col.key.includes('Advance') || col.key.includes('Balance') || 
-                   col.key.includes('Credit') || col.key.includes('Debit') || col.key.includes('Amount') || 
-                   col.key.includes('netAmount') || col.key.includes('Spend') || col.key.includes('Profit') ||
-                   col.key.includes('Expenses') || col.key.includes('TopUps') || col.key.includes('WalletBalance')) {
-          // Keep as number for Excel formulas
-          displayValue = value || 0
-        } else if (col.key === 'type') {
-          displayValue = value || (row.isBulk ? 'Bulk' : 'Normal')
-        } else if (col.key === 'lrNumber') {
-          displayValue = row.lrNumber || row.tripId || 'N/A'
-        } else if (col.key === 'route') {
-          displayValue = row.route || `${row.routeFrom || ''} - ${row.routeTo || ''}`
-        } else if (col.key === 'lrSheet') {
-          displayValue = row.lrSheet || 'Not Received'
-        }
-        
-        excelRow[col.label] = displayValue || ''
+        excelRow[col.label] = getFormattedValue(row, col.key, true) // true for Excel (keep numbers)
       })
       return excelRow
     })
@@ -554,6 +767,9 @@ const FinanceReports = () => {
     setTripType('')
     setStatus('')
     setLrSheet('')
+    setTruckFilter('')
+    setRouteFilter('')
+    setLrSearchTerm('')
   }
 
   return (
@@ -561,7 +777,7 @@ const FinanceReports = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 sm:mb-6 gap-3 sm:gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-text-primary mb-1 sm:mb-2">Reports & Analytics</h1>
-          <p className="text-xs sm:text-sm text-text-secondary">Generate financial reports and export as Excel, CSV, or PDF</p>
+          <p className="text-xs sm:text-sm text-text-secondary">Generate tabular reports and export as Excel, CSV, or PDF</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -602,7 +818,8 @@ const FinanceReports = () => {
         </div>
 
         {showFilters && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-2">
                 Report Type
@@ -613,9 +830,17 @@ const FinanceReports = () => {
                 className="input-field-3d"
               >
                 <option value="Trips - Detail">Trips - Detail</option>
+                <option value="Trips - Summary by Company">Trips - Summary by Company</option>
+                <option value="Trips - Summary by Agent">Trips - Summary by Agent</option>
+                <option value="Trips - Summary by Truck">Trips - Summary by Truck</option>
+                <option value="Trips - Summary by Status">Trips - Summary by Status</option>
+                <option value="Normal trip - All">Normal trip - All</option>
+                <option value="Bulk trips - Summary by Truck">Bulk trips - Summary by Truck</option>
+                <option value="LR Sheets - Summary by Received/Not Received">LR Sheets - Summary by Received/Not Received</option>
                 <option value="Ledger - Summary by Bank">Ledger - Summary by Bank</option>
-                <option value="Bank-wise Monthly Spend">Bank-wise Monthly Spend</option>
+                <option value="Ledger - Top ups by Agent">Ledger - Top ups by Agent</option>
                 <option value="Route Profitability Heatmap">Route Profitability Heatmap</option>
+                <option value="Trip Closing Audit List">Trip Closing Audit List</option>
                 <option value="Agent Performance & Wallet History">Agent Performance & Wallet History</option>
               </select>
             </div>
@@ -680,8 +905,10 @@ const FinanceReports = () => {
               >
                 <option value="">All</option>
                 <option value="Active">Active</option>
-                <option value="Completed">Completed</option>
+                <option value="In Transit">In Transit</option>
                 <option value="Dispute">Dispute</option>
+                <option value="Completed">Completed</option>
+                <option value="Pending">Pending</option>
               </select>
             </div>
 
@@ -700,13 +927,57 @@ const FinanceReports = () => {
               </select>
             </div>
 
-            <div className="flex items-end">
-              <button
-                onClick={clearFilters}
-                className="btn-3d-secondary px-4 py-2 w-full"
-              >
-                Clear All Filters
-              </button>
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-2">
+                Truck (contains)
+              </label>
+              <input
+                type="text"
+                value={truckFilter}
+                onChange={(e) => setTruckFilter(e.target.value)}
+                className="input-field-3d"
+                placeholder="Enter truck number"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-2">
+                Route (contains)
+              </label>
+              <input
+                type="text"
+                value={routeFilter}
+                onChange={(e) => setRouteFilter(e.target.value)}
+                className="input-field-3d"
+                placeholder="Enter route"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-2">
+                LR Number
+              </label>
+              <div className="relative">
+                <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary pointer-events-none" size={18} />
+                <input
+                  type="text"
+                  value={lrSearchTerm}
+                  onChange={(e) => setLrSearchTerm(e.target.value)}
+                  className="input-field-3d pl-10 pr-10"
+                  placeholder="Search by LR Number..."
+                />
+                {lrSearchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setLrSearchTerm('')}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-text-secondary hover:text-text-primary"
+                  >
+                    <FiX size={18} />
+                  </button>
+                )}
+              </div>
+            </div>
+
             </div>
             
             <div className="flex items-end gap-2 lg:col-span-3 mt-2">
@@ -771,8 +1042,7 @@ const FinanceReports = () => {
                         }
                       } else if (col.key.includes('Freight') || col.key.includes('Advance') || col.key.includes('Balance') || 
                           col.key.includes('Credit') || col.key.includes('Debit') || col.key.includes('Amount') || 
-                          col.key.includes('netAmount') || col.key.includes('Spend') || col.key.includes('Profit') ||
-                          col.key.includes('Expenses') || col.key.includes('TopUps') || col.key.includes('WalletBalance')) {
+                          col.key.includes('netAmount')) {
                         displayValue = `Rs ${(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
                       } else if (col.key === 'type') {
                         return (
@@ -800,6 +1070,8 @@ const FinanceReports = () => {
                         displayValue = row.lrNumber || row.tripId || 'N/A'
                       } else if (col.key === 'route') {
                         displayValue = row.route || `${row.routeFrom || ''} - ${row.routeTo || ''}`
+                      } else if (col.key === 'truck') {
+                        displayValue = row.truckNumber || 'N/A'
                       } else if (col.key === 'lrSheet') {
                         displayValue = row.lrSheet || 'Not Received'
                       }

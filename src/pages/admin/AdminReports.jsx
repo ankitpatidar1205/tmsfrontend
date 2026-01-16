@@ -568,6 +568,48 @@ const AdminReports = () => {
     setLocalTrips([])
   }
 
+  // Helper to format values consistently across all exports
+  const getFormattedValue = (row, colKey, isExcel = false) => {
+    const value = row[colKey]
+    
+    // 1. Handle special mappings (columns where key doesn't match data property)
+    if (colKey === 'truck') return row.truckNumber || 'N/A'
+    if (colKey === 'route') return row.route || `${row.routeFrom || ''} - ${row.routeTo || ''}`
+    if (colKey === 'lrNumber') return row.lrNumber || row.tripId || 'N/A'
+    if (colKey === 'lrSheet') return row.lrSheet || 'Not Received'
+    if (colKey === 'type') return value || (row.isBulk ? 'Bulk' : 'Normal')
+    if (colKey === 'date') {
+      return row.date ? (typeof row.date === 'string' ? row.date.split('T')[0] : new Date(row.date).toISOString().split('T')[0]) : 'N/A'
+    }
+    if (colKey === 'closedDate') return row.closedDate || 'N/A'
+    if (colKey === 'closedTime') return row.closedTime || 'N/A'
+    if (['cess', 'kata', 'excessTonnage', 'halting', 'expenses', 'beta', 'others'].includes(colKey)) {
+       // Always return '0' as string for consistency in alignment and data presence
+       return (row[colKey] !== undefined && row[colKey] !== null && row[colKey] !== '') ? row[colKey].toString() : '0'
+    }
+
+    // 2. Handle Currency/Numbers
+    if (colKey.includes('Freight') || colKey.includes('Advance') || colKey.includes('Balance') || 
+        colKey.includes('Credit') || colKey.includes('Debit') || colKey.includes('Amount') || 
+        colKey.includes('netAmount') || colKey.includes('Spend') || colKey.includes('Profit') ||
+        colKey.includes('Expenses') || colKey.includes('TopUps') || colKey.includes('WalletBalance') ||
+        colKey.includes('totalAmount') || colKey.includes('totalTopUps')) {
+      
+      // For Excel, return as FORMATED STRING to enforce Left Alignment (matching headers) AND look like money.
+      // Note: This sacrifices 'number' type for 'visual' alignment and formatting as requested.
+      if (isExcel) {
+         const numVal = value !== undefined && value !== null ? value : 0;
+         return numVal.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+      }
+      return `Rs ${(value !== undefined && value !== null ? value : 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+    }
+
+    // 3. Default fallback
+    // If value is 0, return '0'. If null/undefined/empty, return '-'
+    if (value === 0) return '0'
+    return value || '-'
+  }
+
   const handleExportPDF = () => {
     if (filteredData.length === 0) {
       toast.error('No data to export', {
@@ -586,12 +628,12 @@ const AdminReports = () => {
           <title>${reportType} Report</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
-            th { background-color: #f3f4f6; padding: 10px; text-align: left; border: 1px solid #ddd; font-weight: bold; }
-            td { padding: 8px; border: 1px solid #ddd; }
-            h1 { color: #333; margin-bottom: 10px; }
-            p { color: #666; margin-bottom: 20px; }
-            @media print { @page { margin: 1cm; } }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 10px; }
+            th { background-color: #f3f4f6; padding: 8px; text-align: left; border: 1px solid #ddd; font-weight: bold; }
+            td { padding: 6px; border: 1px solid #ddd; word-wrap: break-word; }
+            h1 { color: #333; margin-bottom: 10px; font-size: 18px; }
+            p { color: #666; margin-bottom: 20px; font-size: 12px; }
+            @media print { @page { margin: 0.5cm; } }
           </style>
         </head>
         <body>
@@ -607,10 +649,7 @@ const AdminReports = () => {
               ${filteredData.map(row => `
                 <tr>
                   ${columns.map(col => {
-                    const value = row[col.key]
-                    const displayValue = typeof value === 'number' 
-                      ? value.toLocaleString('en-IN', { maximumFractionDigits: 2 })
-                      : (value || '')
+                    const displayValue = getFormattedValue(row, col.key, false) // false for PDF (formatted strings)
                     return `<td>${displayValue}</td>`
                   }).join('')}
                 </tr>
@@ -648,17 +687,19 @@ const AdminReports = () => {
     
     const rows = filteredData.map(row => {
       return columns.map(col => {
-        const value = row[col.key]
-        if (typeof value === 'number') {
-          return value.toLocaleString('en-IN', { maximumFractionDigits: 2 })
+        // Escaping commas and quotes for CSV
+        let val = getFormattedValue(row, col.key, false) // Format as string for CSV
+        if (typeof val === 'string') {
+             val = val.replace(/"/g, '""'); // Escape double quotes
+             if (val.search(/("|,|\n)/g) >= 0) val = `"${val}"`; // Quote if contains comma, quote or newline
         }
-        return value || ''
+        return val
       })
     })
 
     const csvContent = [
       headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ...rows.map(row => row.join(','))
     ].join('\n')
 
     // Create download link
@@ -688,46 +729,12 @@ const AdminReports = () => {
     }
 
     const columns = getTableColumns()
-    const headers = columns.map(col => col.label)
     
     // Prepare data for Excel
     const excelData = filteredData.map(row => {
       const excelRow = {}
       columns.forEach(col => {
-        const value = row[col.key]
-        let displayValue = value
-        
-        // Format numbers properly for Excel
-        if (typeof value === 'number') {
-          displayValue = value
-        } else if (col.key.includes('Freight') || col.key.includes('Advance') || col.key.includes('Balance') || 
-                   col.key.includes('Credit') || col.key.includes('Debit') || col.key.includes('Amount') || 
-                   col.key.includes('netAmount') || col.key.includes('Spend') || col.key.includes('Profit') ||
-                   col.key.includes('Expenses') || col.key.includes('TopUps') || col.key.includes('WalletBalance') ||
-                   col.key.includes('totalAmount') || col.key.includes('totalTopUps')) {
-          // Keep as number for Excel formulas
-          displayValue = value || 0
-        } else if (col.key === 'type') {
-          displayValue = value || (row.isBulk ? 'Bulk' : 'Normal')
-        } else if (col.key === 'lrNumber') {
-          displayValue = row.lrNumber || row.tripId || 'N/A'
-        } else if (col.key === 'route') {
-          displayValue = row.route || `${row.routeFrom || ''} - ${row.routeTo || ''}`
-        } else if (col.key === 'truck') {
-          displayValue = row.truckNumber || 'N/A'
-        } else if (col.key === 'lrSheet') {
-          displayValue = row.lrSheet || 'Not Received'
-        } else if (col.key === 'date') {
-          displayValue = row.date ? (typeof row.date === 'string' ? row.date.split('T')[0] : new Date(row.date).toISOString().split('T')[0]) : 'N/A'
-        } else if (col.key === 'closedDate') {
-          displayValue = row.closedDate || 'N/A'
-        } else if (col.key === 'closedTime') {
-          displayValue = row.closedTime || 'N/A'
-        } else if (['cess', 'kata', 'excessTonnage', 'halting', 'expenses', 'beta', 'others'].includes(col.key)) {
-           displayValue = row[col.key] || 0
-        }
-        
-        excelRow[col.label] = displayValue || ''
+        excelRow[col.label] = getFormattedValue(row, col.key, true) // true for Excel (keep numbers)
       })
       return excelRow
     })
