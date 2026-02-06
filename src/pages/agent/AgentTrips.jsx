@@ -17,7 +17,8 @@ const AgentTrips = () => {
   const [agentTrips, setAgentTrips] = useState([])
   const [lrSearchTerm, setLrSearchTerm] = useState('')
   const [companyNames, setCompanyNames] = useState([])
-  const [isLoadingCompanies, setIsLoadingCompanies] = useState(false)
+  const [branchesList, setBranchesList] = useState([])
+  const [isLoadingData, setIsLoadingData] = useState(false)
 
   // Read LR number from URL query params on mount (for LR search navigation)
   useEffect(() => {
@@ -76,26 +77,36 @@ const AgentTrips = () => {
   }, [trips, user?.id, user?._id, user?.role, user?.name])
 
   useEffect(() => {
-    // Fetch company names from admin-managed list
-    const fetchCompanyNames = async () => {
+    // Fetch companies and branches
+    const fetchData = async () => {
       try {
-        setIsLoadingCompanies(true)
-        const { companyAPI } = await import('../../services/api')
-        const companies = await companyAPI.getCompanies()
-        // Extract company names from the response
-        const names = Array.isArray(companies) 
+        setIsLoadingData(true)
+        const { companyAPI, branchAPI } = await import('../../services/api')
+        
+        const [companies, branches] = await Promise.all([
+          companyAPI.getCompanies(),
+          branchAPI.getBranches()
+        ])
+
+        // Extract company names
+        const cNames = Array.isArray(companies) 
           ? companies.map(c => c.name || c).filter(Boolean)
           : []
-        setCompanyNames(names)
+        setCompanyNames(cNames)
+
+        // Extract branch names
+        const bNames = Array.isArray(branches) 
+          ? branches.map(b => b.name || b).filter(Boolean)
+          : []
+        setBranchesList(bNames)
       } catch (error) {
-        console.error('Error loading company names:', error)
-        setCompanyNames([])
+        console.error('Error loading data:', error)
       } finally {
-        setIsLoadingCompanies(false)
+        setIsLoadingData(false)
       }
     }
 
-    fetchCompanyNames()
+    fetchData()
   }, [])
 
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -107,6 +118,7 @@ const AgentTrips = () => {
     truckNumber: '',
     driverPhoneNumber: '',
     companyName: '',
+    branch: '',
     routeFrom: '',
     routeTo: '',
     tonnage: '',
@@ -162,6 +174,7 @@ const AgentTrips = () => {
       truckNumber: '',
       driverPhoneNumber: '',
       companyName: '',
+      branch: '',
       routeFrom: '',
       routeTo: '',
       tonnage: '',
@@ -258,16 +271,6 @@ const AgentTrips = () => {
     }
     
     try {
-      // Find branch ID if user has branch
-      let branchId = null
-      if (user?.branch) {
-        const { branchAPI } = await import('../../services/api')
-        const branches = await branchAPI.getBranches()
-        const branch = branches.find(b => b.name === user.branch)
-        if (branch) {
-          branchId = branch.id || branch._id
-        }
-      }
 
       // Ensure agentId is set correctly (use id or _id, both are same)
       const agentId = user?.id || user?._id
@@ -279,6 +282,7 @@ const AgentTrips = () => {
         truckNumber: formData.truckNumber,
         driverPhoneNumber: formData.driverPhoneNumber,
         companyName: formData.companyName,
+        branch: formData.branch,
         routeFrom: formData.routeFrom,
         routeTo: formData.routeTo,
         tonnage: parseFloat(formData.tonnage) || 0,
@@ -287,7 +291,7 @@ const AgentTrips = () => {
         freightAmount: formData.isBulk ? 0 : (parseFloat(formData.freightAmount) || 0),
         advancePaid: formData.isBulk ? 0 : (parseFloat(formData.advancePaid) || 0),
         agentId: agentId, // Explicitly set agentId
-        branchId: branchId,
+        branchId: formData.branch || null, // Use selected branch
       }
       
 
@@ -317,6 +321,7 @@ const AgentTrips = () => {
         truckNumber: '',
         driverPhoneNumber: '',
         companyName: '',
+        branch: '',
         routeFrom: '',
         routeTo: '',
         tonnage: '',
@@ -495,6 +500,7 @@ const AgentTrips = () => {
             truckNumber: '',
             driverPhoneNumber: '',
             companyName: '',
+            branch: '',
             routeFrom: '',
             routeTo: '',
             tonnage: '',
@@ -597,7 +603,7 @@ const AgentTrips = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-2">
-                Company Name <span className="text-red-500">*</span>
+                Company To <span className="text-red-500">*</span>
               </label>
               <div className="space-y-2">
                 <select
@@ -605,7 +611,7 @@ const AgentTrips = () => {
                   value={formData.companyName}
                   onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
                   className="input-field-3d"
-                  disabled={isLoadingCompanies && companyNames.length === 0}
+                  disabled={isLoadingData && companyNames.length === 0}
                 >
                   <option value="">Select company</option>
                   {companyNames.map((name) => (
@@ -614,13 +620,32 @@ const AgentTrips = () => {
                     </option>
                   ))}
                 </select>
-                {isLoadingCompanies && (
-                  <p className="text-xs text-text-secondary">Loading company names...</p>
+                {isLoadingData && companyNames.length === 0 && (
+                  <p className="text-xs text-text-secondary">Loading companies...</p>
                 )}
-                {!isLoadingCompanies && companyNames.length === 0 && (
-                  <p className="text-xs text-text-secondary">
-                    No companies available. Please contact admin to add companies.
-                  </p>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-2">
+                Company <span className="text-red-500">*</span>
+              </label>
+              <div className="space-y-2">
+                <select
+                  required
+                  value={formData.branch}
+                  onChange={(e) => setFormData({ ...formData, branch: e.target.value })}
+                  className="input-field-3d"
+                  disabled={isLoadingData && branchesList.length === 0}
+                >
+                  <option value="">Company</option>
+                  {branchesList.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                {isLoadingData && branchesList.length === 0 && (
+                  <p className="text-xs text-text-secondary">Loading branches...</p>
                 )}
               </div>
             </div>

@@ -266,6 +266,23 @@ export const ledgerAPI = {
       body: JSON.stringify(transferData),
     })
   },
+
+  updateLedgerEntry: async (id, data) => {
+    return apiCall(`/ledger/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
+
+  deleteLedgerEntry: async (id, userId = null, userRole = null) => {
+    const query = new URLSearchParams()
+    if (userId) query.append('userId', userId)
+    if (userRole) query.append('userRole', userRole)
+
+    return apiCall(`/ledger/${id}${query.toString() ? `?${query.toString()}` : ''}`, {
+      method: 'DELETE',
+    })
+  },
 }
 
 // Dispute APIs

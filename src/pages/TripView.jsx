@@ -886,8 +886,12 @@ const TripView = () => {
                 <p className="text-text-primary">{trip.truckNumber || 'N/A'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1">Company</label>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Company To</label>
                 <p className="text-text-primary">{trip.companyName || 'N/A'}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Company</label>
+                <p className="text-text-primary">{trip.branch || 'N/A'}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-1">Agent Name</label>

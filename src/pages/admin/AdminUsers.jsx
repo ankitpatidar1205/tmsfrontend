@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useData } from '../../context/DataContext'
 import { userAPI } from '../../services/api'
-import { FiPlus, FiEdit, FiTrash2, FiUser, FiSearch, FiX } from 'react-icons/fi'
+import { FiPlus, FiEdit, FiTrash2, FiUser, FiSearch, FiX, FiEye, FiEyeOff } from 'react-icons/fi'
 import { toast } from 'react-toastify'
 
 const AdminUsers = () => {
@@ -14,6 +14,7 @@ const AdminUsers = () => {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
+  const [showPassword, setShowPassword] = useState(false)
   const [nameSearchTerm, setNameSearchTerm] = useState('')
   const [formData, setFormData] = useState({
     name: '',
@@ -32,12 +33,13 @@ const AdminUsers = () => {
   const loadUsers = async () => {
     try {
       setLoading(true)
-      // Load both Agent and Finance users
-      const [agents, financeUsers] = await Promise.all([
+      // Load Agent, Finance, and Admin users
+      const [agents, financeUsers, adminUsers] = await Promise.all([
         userAPI.getUsers('Agent'),
         userAPI.getUsers('Finance'),
+        userAPI.getUsers('Admin'),
       ])
-      setUsers([...agents, ...financeUsers])
+      setUsers([...agents, ...financeUsers, ...adminUsers])
     } catch (error) {
       console.error('Error loading users:', error)
       toast.error('Failed to load users', {
@@ -69,6 +71,7 @@ const AdminUsers = () => {
       branchId: '',
     })
     setShowCreateModal(true)
+    setShowPassword(false)
   }
 
   const handleEdit = (user) => {
@@ -84,6 +87,7 @@ const AdminUsers = () => {
       branchId: branch?.id || branch?._id || '',
     })
     setShowEditModal(true)
+    setShowPassword(false)
   }
 
   const handleDelete = async (id) => {
@@ -136,6 +140,14 @@ const AdminUsers = () => {
           return
         }
 
+        if (formData.password.length < 6) {
+          toast.error('Password must be at least 6 characters long', {
+            position: 'top-right',
+            autoClose: 3000,
+          })
+          return
+        }
+
         const userData = {
           name: formData.name,
           email: formData.email,
@@ -179,6 +191,13 @@ const AdminUsers = () => {
         
         // Only include password if provided
         if (formData.password) {
+          if (formData.password.length < 6) {
+            toast.error('Password must be at least 6 characters long', {
+              position: 'top-right',
+              autoClose: 3000,
+            })
+            return
+          }
           userData.password = formData.password
         }
 
@@ -211,7 +230,7 @@ const AdminUsers = () => {
   }
 
   const filteredUsers = useMemo(() => {
-    let filtered = users.filter(u => u.role === 'Agent' || u.role === 'Finance')
+    let filtered = users.filter(u => u.role === 'Agent' || u.role === 'Finance' || u.role === 'Admin')
     
     // Filter by name
     if (nameSearchTerm) {
@@ -304,7 +323,9 @@ const AdminUsers = () => {
                       <span className={`px-2 sm:px-3 py-1 rounded-full text-xs font-medium ${
                         user.role === 'Agent'
                           ? 'bg-blue-100 text-blue-800'
-                          : 'bg-green-100 text-green-800'
+                          : user.role === 'Finance'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-red-100 text-red-800'
                       }`}>
                         {user.role}
                       </span>
@@ -386,14 +407,24 @@ const AdminUsers = () => {
                 <label className="block text-sm font-medium text-text-secondary mb-2">
                   Password <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="password"
-                  required
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="input-field-3d"
-                  placeholder="Enter password"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    minLength={6}
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="input-field-3d pr-10"
+                    placeholder="Enter password (min 6 characters)"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-text-secondary hover:text-text-primary"
+                  >
+                    {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-2">
@@ -407,6 +438,7 @@ const AdminUsers = () => {
                 >
                   <option value="Agent">Agent</option>
                   <option value="Finance">Finance</option>
+                  <option value="Admin">Admin</option>
                 </select>
               </div>
               <div>
@@ -502,13 +534,23 @@ const AdminUsers = () => {
                 <label className="block text-sm font-medium text-text-secondary mb-2">
                   Password (leave blank to keep current)
                 </label>
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="input-field-3d"
-                  placeholder="Enter new password"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    minLength={6}
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="input-field-3d pr-10"
+                    placeholder="Enter new password (min 6 characters)"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-text-secondary hover:text-text-primary"
+                  >
+                    {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-2">
@@ -522,6 +564,7 @@ const AdminUsers = () => {
                 >
                   <option value="Agent">Agent</option>
                   <option value="Finance">Finance</option>
+                  <option value="Admin">Admin</option>
                 </select>
               </div>
               <div>

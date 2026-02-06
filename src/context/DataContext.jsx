@@ -289,8 +289,27 @@ export const DataProvider = ({ children }) => {
   }
 
   const updateLedgerEntry = async (id, updates) => {
-    // Ledger entries are usually read-only, but keeping for compatibility
-    await loadLedger()
+    try {
+      // Ensure user info is passed for audit logs if needed (handled by controller but good to be explicit if backend expects it)
+      const data = await ledgerAPI.updateLedgerEntry(id, {
+        ...updates,
+        userId: user?.id || user?._id || null,
+        userRole: user?.role || 'Admin'
+      })
+      await loadLedger()
+      return data
+    } catch (error) {
+      throw new Error(error.message || 'Failed to update ledger entry')
+    }
+  }
+
+  const deleteLedgerEntry = async (id) => {
+    try {
+      await ledgerAPI.deleteLedgerEntry(id, user?.id || user?._id, user?.role)
+      await loadLedger()
+    } catch (error) {
+      throw new Error(error.message || 'Failed to delete ledger entry')
+    }
   }
 
   const addTopUp = async (topUpData) => {
@@ -458,6 +477,7 @@ export const DataProvider = ({ children }) => {
     // Ledger functions
     addLedgerEntry,
     updateLedgerEntry,
+    deleteLedgerEntry,
     addTopUp,
     transferToAgent,
     

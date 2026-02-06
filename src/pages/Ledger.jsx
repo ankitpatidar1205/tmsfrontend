@@ -41,6 +41,16 @@ const  Ledger = () => {
   })
   const [isAddingTopUp, setIsAddingTopUp] = useState(false)
 
+  // Edit/Delete state for Ledger entries
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingEntry, setEditingEntry] = useState(null)
+  const [editFormData, setEditFormData] = useState({
+    amount: '',
+    reason: ''
+  })
+  const [isEditing, setIsEditing] = useState(false)
+  const { deleteLedgerEntry, updateLedgerEntry } = useData()
+
   const filteredLedger = useMemo(() => {
     let filtered = [...ledger]
 
@@ -718,6 +728,51 @@ const  Ledger = () => {
     }
   }
 
+  const handleEditClick = (entry) => {
+    setEditingEntry(entry)
+    const isTransfer = entry.type === 'Agent Transfer';
+    setEditFormData({
+      amount: entry.amount || '',
+      reason: isTransfer ? '' : (entry.description?.replace('Top-up: ', '') || '')
+    })
+    setShowEditModal(true)
+  }
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault()
+    if (!editingEntry) return
+
+    setIsEditing(true)
+    try {
+      await updateLedgerEntry(editingEntry.id || editingEntry._id, {
+        amount: parseFloat(editFormData.amount),
+        reason: editFormData.reason
+      })
+      toast.success('Ledger entry updated successfully')
+      setShowEditModal(false)
+    } catch (error) {
+      toast.error(error.message || 'Failed to update ledger entry')
+    } finally {
+      setIsEditing(false)
+    }
+  }
+
+  const handleDeleteClick = async (entry) => {
+    const isTransfer = entry.type === 'Agent Transfer';
+    const confirmMsg = isTransfer 
+      ? 'Are you sure you want to delete this agent transfer? This will revert the balance for BOTH agents involved.' 
+      : 'Are you sure you want to delete this top-up entry? This will revert the agent\'s balance.';
+      
+    if (window.confirm(confirmMsg)) {
+      try {
+        await deleteLedgerEntry(entry.id || entry._id)
+        toast.success(`Ledger entry ${isTransfer ? 'and its pair ' : ''}deleted successfully`)
+      } catch (error) {
+        toast.error(error.message || 'Failed to delete ledger entry')
+      }
+    }
+  }
+
   return (
     <div className="p-3 sm:p-6">
       {/* Header */}
@@ -1108,6 +1163,9 @@ const  Ledger = () => {
                 <th className="text-left py-3 px-3 sm:px-4 text-text-secondary font-semibold text-xs sm:text-sm whitespace-nowrap">Amount</th>
                 <th className="text-left py-3 px-3 sm:px-4 text-text-secondary font-semibold text-xs sm:text-sm whitespace-nowrap">Paid By</th>
                 <th className="text-left py-3 px-3 sm:px-4 text-text-secondary font-semibold text-xs sm:text-sm">Description</th>
+                {(isAdmin() || role === 'Finance') && (
+                  <th className="text-left py-3 px-3 sm:px-4 text-text-secondary font-semibold text-xs sm:text-sm whitespace-nowrap">Actions</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -1202,11 +1260,35 @@ const  Ledger = () => {
                       )}
                     </td>
                     <td className="py-3 px-3 sm:px-4 text-text-primary text-xs sm:text-sm break-words">{entry.description || 'N/A'}</td>
+                    {(isAdmin() || role === 'Finance') && (
+                      <td className="py-3 px-3 sm:px-4">
+                        {(entry.type === 'Top-up' || entry.type === 'Virtual Top-up' || entry.type === 'Agent Transfer') ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleEditClick(entry)}
+                              className="p-1 px-2 text-blue-600 hover:bg-blue-50 rounded border border-blue-200 transition-colors"
+                              title="Edit"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteClick(entry)}
+                              className="p-1 px-2 text-red-600 hover:bg-red-50 rounded border border-red-200 transition-colors"
+                              title="Delete"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">-</span>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={showAgentColumn && showBankColumn ? 9 : showAgentColumn || showBankColumn ? 8 : 7} className="py-12 text-center text-text-muted text-sm">
+                  <td colSpan={showAgentColumn && showBankColumn ? 10 : showAgentColumn || showBankColumn ? 9 : 8} className="py-12 text-center text-text-muted text-sm">
                     No ledger entries found.
                   </td>
                 </tr>
@@ -1244,6 +1326,80 @@ const  Ledger = () => {
                 return sum + (entry.amount || 0)
               }, 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Top-up Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-4 sm:p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <h2 className="text-lg sm:text-xl font-bold text-gray-800">
+                Edit {editingEntry?.type === 'Agent Transfer' ? 'Agent Transfer' : 'Top-up'}
+              </h2>
+              <button 
+                onClick={() => setShowEditModal(false)}
+                className="p-2 hover:bg-gray-200 rounded-full transition-colors"
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleEditSubmit} className="p-4 sm:p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Amount (₹)
+                </label>
+                <input
+                  type="number"
+                  required
+                  step="0.01"
+                  min="0"
+                  value={editFormData.amount}
+                  onChange={(e) => setEditFormData({ ...editFormData, amount: e.target.value })}
+                  className="input-field-3d w-full"
+                  placeholder="0.00"
+                />
+                {editingEntry?.type === 'Agent Transfer' && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Updating this amount will update the entry for BOTH agents.
+                  </p>
+                )}
+              </div>
+              
+              {editingEntry?.type !== 'Agent Transfer' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Reason (optional)
+                  </label>
+                  <textarea
+                    value={editFormData.reason}
+                    onChange={(e) => setEditFormData({ ...editFormData, reason: e.target.value })}
+                    className="input-field-3d w-full min-h-[100px]"
+                    placeholder="Optional reason for update"
+                  />
+                </div>
+              )}
+              
+              <div className="flex gap-3 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="btn-3d-secondary px-4 py-2"
+                  disabled={isEditing}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-3d-primary px-6 py-2"
+                  disabled={isEditing}
+                >
+                  {isEditing ? 'Updating...' : `Update ${editingEntry?.type === 'Agent Transfer' ? 'Transfer' : 'Top-up'}`}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
