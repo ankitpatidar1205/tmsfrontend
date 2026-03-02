@@ -157,8 +157,8 @@ export const tripAPI = {
     if (filters.startDate) params.append('startDate', filters.startDate)
     if (filters.endDate) params.append('endDate', filters.endDate)
     if (filters.lrSheet) params.append('lrSheet', filters.lrSheet)
-    if (filters.page) params.append('page', filters.page)
-    if (filters.limit) params.append('limit', filters.limit)
+    if (filters.page !== undefined) params.append('page', filters.page)
+    if (filters.limit !== undefined) params.append('limit', filters.limit)
 
     const query = params.toString()
     return apiCall(`/trips${query ? `?${query}` : ''}`)
@@ -242,8 +242,8 @@ export const ledgerAPI = {
     if (filters.agentId) params.append('agentId', filters.agentId)
     if (filters.date) params.append('date', filters.date)
     if (filters.lrNumber) params.append('lrNumber', filters.lrNumber)
-    if (filters.page) params.append('page', filters.page)
-    if (filters.limit) params.append('limit', filters.limit)
+    if (filters.page !== undefined) params.append('page', filters.page)
+    if (filters.limit !== undefined) params.append('limit', filters.limit)
 
     const query = params.toString()
     return apiCall(`/ledger${query ? `?${query}` : ''}`)
@@ -371,6 +371,58 @@ export const auditLogAPI = {
   },
 }
 
+// Bank APIs
+export const bankAPI = {
+  getBanks: async () => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    const token = user.token
+    return apiCall('/banks', {
+      headers: token ? {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      } : { 'Content-Type': 'application/json' }
+    })
+  },
+
+  createBank: async (name) => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    const token = user.token
+    return apiCall('/banks', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+      headers: token ? {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      } : { 'Content-Type': 'application/json' }
+    })
+  },
+
+  updateBank: async (id, name) => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    const token = user.token
+    return apiCall(`/banks/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+      headers: token ? {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      } : { 'Content-Type': 'application/json' }
+    })
+  },
+
+  deleteBank: async (id) => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    const token = user.token
+    return apiCall(`/banks/${id}`, {
+      method: 'DELETE',
+      headers: token ? {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      } : { 'Content-Type': 'application/json' }
+    })
+  },
+}
+
 // Search APIs
 export const searchAPI = {
   globalLRSearch: async (lrNumber, companyName = null) => {
@@ -391,6 +443,7 @@ export default {
   disputeAPI,
   reportAPI,
   auditLogAPI,
+  bankAPI,
   searchAPI,
 }
 

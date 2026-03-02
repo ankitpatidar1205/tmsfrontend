@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useData } from '../../context/DataContext'
-import { FiEye, FiEdit, FiTrash2, FiSearch, FiX } from 'react-icons/fi'
+import { FiEye, FiEdit, FiTrash2, FiSearch, FiX, FiChevronLeft, FiChevronRight } from 'react-icons/fi'
 import AdminModal from '../../components/modals/AdminModal'
 import AgentFilter from '../../components/AgentFilter'
 import { toast } from 'react-toastify'
@@ -9,7 +9,7 @@ import { toast } from 'react-toastify'
 const AdminTrips = () => {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { trips, updateTrip, deleteTrip } = useData()
+  const { trips, tripsPagination, loadTrips, updateTrip, deleteTrip } = useData()
   const [selectedAgentId, setSelectedAgentId] = useState(null)
   const [lrSearchTerm, setLrSearchTerm] = useState('')
 
@@ -21,6 +21,7 @@ const AdminTrips = () => {
       // Clear URL param after reading
       setSearchParams({}, { replace: true })
     }
+    loadTrips()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -243,6 +244,44 @@ const AdminTrips = () => {
             )}
           </tbody>
         </table>
+
+        {/* Pagination Controls */}
+        {tripsPagination && tripsPagination.pages > 1 && (
+          <div className="flex items-center justify-between mt-4 px-2">
+            <div className="text-sm text-text-secondary">
+              Showing <span className="font-medium">{(tripsPagination.page - 1) * tripsPagination.limit + 1}</span> to{' '}
+              <span className="font-medium">{Math.min(tripsPagination.page * tripsPagination.limit, tripsPagination.total)}</span> of{' '}
+              <span className="font-medium">{tripsPagination.total}</span> entries
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => loadTrips({ page: tripsPagination.page - 1, limit: tripsPagination.limit })}
+                disabled={tripsPagination.page === 1}
+                className={`p-2 rounded-lg border ${
+                  tripsPagination.page === 1
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'bg-white text-text-primary border-gray-300 hover:bg-gray-50 transition-colors shadow-sm'
+                }`}
+              >
+                <FiChevronLeft size={16} />
+              </button>
+              <span className="text-sm font-medium text-text-primary px-2">
+                Page {tripsPagination.page} of {tripsPagination.pages}
+              </span>
+              <button
+                onClick={() => loadTrips({ page: tripsPagination.page + 1, limit: tripsPagination.limit })}
+                disabled={tripsPagination.page === tripsPagination.pages}
+                className={`p-2 rounded-lg border ${
+                  tripsPagination.page === tripsPagination.pages
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'bg-white text-text-primary border-gray-300 hover:bg-gray-50 transition-colors shadow-sm'
+                }`}
+              >
+                <FiChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
 

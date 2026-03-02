@@ -22,6 +22,7 @@ import AdminReports from './pages/admin/AdminReports'
 import AdminAuditLogs from './pages/admin/AdminAuditLogs'
 import AdminUsers from './pages/admin/AdminUsers'
 import AdminSettings from './pages/admin/AdminSettings'
+import AdminBanks from './pages/admin/AdminBanks'
 
 // Finance Pages
 import FinanceDashboard from './pages/dashboards/FinanceDashboard'
@@ -182,6 +183,16 @@ function AppRoutes() {
           <ProtectedRoute allowedRoles={['Admin']}>
             <AdminLayout>
               <AdminSettings />
+            </AdminLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/banks"
+        element={
+          <ProtectedRoute allowedRoles={['Admin']}>
+            <AdminLayout>
+              <AdminBanks />
             </AdminLayout>
           </ProtectedRoute>
         }

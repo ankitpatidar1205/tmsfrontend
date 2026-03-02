@@ -1,15 +1,20 @@
 import React, { useState, useMemo, useEffect } from 'react'
+import { ledgerAPI } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { useRole } from '../hooks/useRole'
-import { FiFilter, FiSend, FiUser, FiSearch, FiX } from 'react-icons/fi'
+import { useBanks } from '../hooks/useBanks'
+import { FiFilter, FiSend, FiUser, FiSearch, FiX, FiPlus, FiTrash2, FiEdit, FiChevronLeft, FiChevronRight, FiArrowUp, FiArrowDown } from 'react-icons/fi'
 import AgentFilter from '../components/AgentFilter'
+import AddBankModal from '../components/modals/AddBankModal'
 import { toast } from 'react-toastify'
 
 const  Ledger = () => {
   const { user } = useAuth()
   const { role, isAgent, isAdmin } = useRole()
-  const { ledger, trips, agents, getAgents, transferToAgent, addLedgerEntry, addTopUp, getTripsByBranch, loadAgents, loadLedger, loadTrips } = useData()
+  const { ledger, ledgerPagination, ledgerTotals, trips, agents, getAgents, transferToAgent, addLedgerEntry, addTopUp, getTripsByBranch, loadAgents, loadLedger, loadTrips } = useData()
+  const { banks, refetch: refetchBanks } = useBanks()
+  const [showAddBankModal, setShowAddBankModal] = useState(false)
   
   // Load agents, trips, and ledger when component mounts (only once)
   useEffect(() => {
@@ -38,6 +43,7 @@ const  Ledger = () => {
     bank: '',
     reason: '',
     isVirtual: false, // Virtual top-up for repairs (Credit + Immediate Debit)
+    date: new Date().toISOString().split('T')[0], // Default to today
   })
   const [isAddingTopUp, setIsAddingTopUp] = useState(false)
 
@@ -688,6 +694,7 @@ const  Ledger = () => {
         bank: topUpForm.bank || (topUpForm.mode === 'Cash' ? 'Cash' : ''),
         reason: topUpForm.reason || '',
         isVirtual: topUpForm.isVirtual || false,
+        date: topUpForm.date,
       }
 
       await addTopUp(topUpData)
@@ -709,6 +716,7 @@ const  Ledger = () => {
         bank: '',
         reason: '',
         isVirtual: false,
+        date: new Date().toISOString().split('T')[0],
       })
       
       // Scroll to ledger table to show the new entry
@@ -728,12 +736,30 @@ const  Ledger = () => {
     }
   }
 
+  const handleClearBank = () => {
+    setEditFormData({ ...editFormData, bank: '', mode: 'Cash' })
+    toast.info('Bank removed from entry. Mode set to Cash.')
+  }
+
   const handleEditClick = (entry) => {
     setEditingEntry(entry)
     const isTransfer = entry.type === 'Agent Transfer';
+    
+    // Determine mode and bank from entry
+    let mode = 'Cash';
+    let bank = '';
+    
+    // Check if bank exists and is not 'Cash' to determine if it's Online
+    if (entry.bank && entry.bank !== 'Cash') {
+      mode = 'Online';
+      bank = entry.bank;
+    }
+    
     setEditFormData({
       amount: entry.amount || '',
-      reason: isTransfer ? '' : (entry.description?.replace('Top-up: ', '') || '')
+      reason: isTransfer ? '' : (entry.description?.replace('Top-up: ', '') || ''),
+      mode: mode,
+      bank: bank
     })
     setShowEditModal(true)
   }
@@ -744,12 +770,14 @@ const  Ledger = () => {
 
     setIsEditing(true)
     try {
-      await updateLedgerEntry(editingEntry.id || editingEntry._id, {
+      await ledgerAPI.updateLedgerEntry(editingEntry.id || editingEntry._id, {
         amount: parseFloat(editFormData.amount),
-        reason: editFormData.reason
+        reason: editFormData.reason,
+        bank: (editFormData.mode === 'Cash') ? 'Cash' : editFormData.bank
       })
       toast.success('Ledger entry updated successfully')
       setShowEditModal(false)
+      loadLedger()
     } catch (error) {
       toast.error(error.message || 'Failed to update ledger entry')
     } finally {
@@ -765,8 +793,9 @@ const  Ledger = () => {
       
     if (window.confirm(confirmMsg)) {
       try {
-        await deleteLedgerEntry(entry.id || entry._id)
+        await ledgerAPI.deleteLedgerEntry(entry.id || entry._id)
         toast.success(`Ledger entry ${isTransfer ? 'and its pair ' : ''}deleted successfully`)
+        loadLedger()
       } catch (error) {
         toast.error(error.message || 'Failed to delete ledger entry')
       }
@@ -864,7 +893,19 @@ const  Ledger = () => {
             </p>
           </div>
           <form onSubmit={handleTopUp} className="space-y-3 sm:space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-2">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={topUpForm.date}
+                  onChange={(e) => setTopUpForm({ ...topUpForm, date: e.target.value })}
+                  className="input-field-3d w-full"
+                />
+              </div>
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-2">
                   Amount (₹) <span className="text-red-500">*</span>
@@ -932,39 +973,48 @@ const  Ledger = () => {
                 <label className="block text-sm font-medium text-text-secondary mb-2">
                   Bank {topUpForm.mode === 'Online' && <span className="text-red-500">*</span>}
                 </label>
-                <select
-                  required={topUpForm.mode === 'Online'}
-                  value={topUpForm.bank}
-                  onChange={(e) => setTopUpForm({ ...topUpForm, bank: e.target.value })}
-                  className={`input-field-3d w-full appearance-none ${
-                    topUpForm.mode === 'Cash' 
-                      ? 'bg-gray-100 cursor-not-allowed opacity-60' 
-                      : 'bg-background-light cursor-pointer'
-                  }`}
-                  disabled={topUpForm.mode === 'Cash'}
-                  style={{ 
-                    backgroundImage: topUpForm.mode !== 'Cash' ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 12 12\'%3E%3Cpath fill=\'%23333\' d=\'M6 9L1 4h10z\'/%3E%3C/svg%3E")' : 'none',
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 0.75rem center',
-                    paddingRight: '2.5rem',
-                    WebkitAppearance: 'none',
-                    MozAppearance: 'none'
-                  }}
-                >
-                  <option value="">Select Bank</option>
-                  <option value="HDFC Bank">HDFC Bank</option>
-                  <option value="ICICI Bank">ICICI Bank</option>
-                  <option value="State Bank of India">State Bank of India</option>
-                  <option value="Axis Bank">Axis Bank</option>
-                  <option value="Kotak Mahindra Bank">Kotak Mahindra Bank</option>
-                  <option value="Punjab National Bank">Punjab National Bank</option>
-                  <option value="Bank of Baroda">Bank of Baroda</option>
-                  <option value="Canara Bank">Canara Bank</option>
-                </select>
-                {topUpForm.mode === 'Cash' && (
-                  <p className="text-xs text-gray-500 mt-1">Bank selection is optional for Cash</p>
-                )}
-              </div>
+      <div className="flex gap-2">
+        <select
+          required={topUpForm.mode === 'Online'}
+          value={topUpForm.bank}
+          onChange={(e) => setTopUpForm({ ...topUpForm, bank: e.target.value })}
+          className={`input-field-3d w-full appearance-none ${
+            topUpForm.mode === 'Cash' 
+              ? 'bg-gray-100 cursor-not-allowed opacity-60' 
+              : 'bg-background-light cursor-pointer'
+          }`}
+          disabled={topUpForm.mode === 'Cash'}
+          style={{ 
+            backgroundImage: topUpForm.mode !== 'Cash' ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 12 12\'%3E%3Cpath fill=\'%23333\' d=\'M6 9L1 4h10z\'/%3E%3C/svg%3E")' : 'none',
+            backgroundRepeat: 'no-repeat',
+            backgroundPosition: 'right 0.75rem center',
+            paddingRight: '2.5rem',
+            WebkitAppearance: 'none',
+            MozAppearance: 'none'
+          }}
+        >
+          <option value="">Select Bank</option>
+          {banks.map((bank) => (
+            <option key={bank._id} value={bank.name}>
+              {bank.name}
+            </option>
+          ))}
+        </select>
+        {isAdmin && topUpForm.mode !== 'Cash' && (
+          <button
+            type="button"
+            onClick={() => setShowAddBankModal(true)}
+            className="p-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors flex-shrink-0"
+            title="Add New Bank"
+          >
+            <FiPlus size={20} />
+          </button>
+        )}
+      </div>
+      {topUpForm.mode === 'Cash' && (
+        <p className="text-xs text-gray-500 mt-1">Bank selection is optional for Cash</p>
+      )}
+    </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-2">
@@ -1297,34 +1347,56 @@ const  Ledger = () => {
           </table>
         </div>
       </div>
+      
+      {/* Pagination Controls */}
+      {ledgerPagination && ledgerPagination.pages > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <div className="text-sm text-text-secondary">
+            Showing <span className="font-medium">{(ledgerPagination.page - 1) * ledgerPagination.limit + 1}</span> to <span className="font-medium">{Math.min(ledgerPagination.page * ledgerPagination.limit, ledgerPagination.total)}</span> of <span className="font-medium">{ledgerPagination.total}</span> entries
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => loadLedger({ page: ledgerPagination.page - 1, limit: ledgerPagination.limit })}
+              disabled={ledgerPagination.page === 1}
+              className={`p-2 rounded-lg border ${
+                ledgerPagination.page === 1
+                  ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                  : 'bg-white text-text-primary border-gray-300 hover:bg-gray-50 text-sm font-medium transition-colors shadow-sm'
+              }`}
+            >
+              <FiChevronLeft size={16} />
+            </button>
+            <span className="text-sm font-medium text-text-primary px-2">
+              Page {ledgerPagination.page} of {ledgerPagination.pages}
+            </span>
+            <button
+              onClick={() => loadLedger({ page: ledgerPagination.page + 1, limit: ledgerPagination.limit })}
+              disabled={ledgerPagination.page === ledgerPagination.pages}
+              className={`p-2 rounded-lg border ${
+                ledgerPagination.page === ledgerPagination.pages
+                  ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                  : 'bg-white text-text-primary border-gray-300 hover:bg-gray-50 text-sm font-medium transition-colors shadow-sm'
+              }`}
+            >
+              <FiChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Summary Card */}
-      {filteredLedger.length > 0 && (
+      {(ledgerTotals.totalCredit > 0 || ledgerTotals.totalDebit > 0 || filteredLedger.length > 0) && (
         <div className="mt-4 sm:mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           <div className="card bg-white border-2 border-gray-200">
             <h3 className="text-xs sm:text-sm font-medium text-text-secondary mb-2">Total Credits</h3>
             <p className="text-lg sm:text-xl lg:text-2xl font-bold text-green-600 break-words">
-              Rs {filteredLedger.filter(e => {
-                // Fix: Trip Created should not be counted as Credit
-                const direction = (e.type === 'Trip Created' && e.direction === 'Credit') ? 'Debit' : e.direction
-                return direction === 'Credit'
-              }).reduce((sum, entry) => {
-                // Use corrected amount (already transformed in filteredLedger)
-                return sum + (entry.amount || 0)
-              }, 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+              Rs {(ledgerTotals.totalCredit || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
             </p>
           </div>
           <div className="card bg-white border-2 border-gray-200">
             <h3 className="text-xs sm:text-sm font-medium text-text-secondary mb-2">Total Debits</h3>
             <p className="text-lg sm:text-xl lg:text-2xl font-bold text-red-600 break-words">
-              Rs {filteredLedger.filter(e => {
-                // Fix: Trip Created should be counted as Debit
-                const direction = (e.type === 'Trip Created' && e.direction === 'Credit') ? 'Debit' : e.direction
-                return direction === 'Debit'
-              }).reduce((sum, entry) => {
-                // Use corrected amount (already transformed in filteredLedger)
-                return sum + (entry.amount || 0)
-              }, 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+              Rs {(ledgerTotals.totalDebit || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
             </p>
           </div>
         </div>
@@ -1367,6 +1439,62 @@ const  Ledger = () => {
                   </p>
                 )}
               </div>
+
+              {editingEntry?.type !== 'Agent Transfer' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Mode
+                    </label>
+                    <select
+                      value={editFormData.mode || 'Cash'}
+                      onChange={(e) => setEditFormData({ 
+                        ...editFormData, 
+                        mode: e.target.value, 
+                        bank: e.target.value === 'Cash' ? '' : (editFormData.bank || '')
+                      })}
+                      className="input-field-3d w-full"
+                    >
+                      <option value="Cash">Cash</option>
+                      <option value="Online">Online</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Bank {editFormData.mode === 'Online' && <span className="text-red-500">*</span>}
+                    </label>
+                    <div className="flex gap-2">
+                      <select
+                        value={editFormData.bank || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, bank: e.target.value })}
+                        className={`input-field-3d w-full ${
+                          editFormData.mode === 'Cash' 
+                            ? 'bg-gray-100 cursor-not-allowed opacity-60' 
+                            : 'bg-white cursor-pointer'
+                        }`}
+                        disabled={editFormData.mode === 'Cash'}
+                      >
+                        <option value="">Select Bank</option>
+                        {banks.map((bank) => (
+                          <option key={bank._id} value={bank.name}>
+                            {bank.name}
+                          </option>
+                        ))}
+                      </select>
+                      {editFormData.mode === 'Online' && editFormData.bank && (
+                        <button
+                          type="button"
+                          onClick={handleClearBank}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded border border-red-200 transition-colors"
+                          title="Remove bank from this entry (Switch to Cash)"
+                        >
+                          <FiTrash2 size={18} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
               
               {editingEntry?.type !== 'Agent Transfer' && (
                 <div>
@@ -1403,6 +1531,14 @@ const  Ledger = () => {
           </div>
         </div>
       )}
+      <AddBankModal 
+        isOpen={showAddBankModal} 
+        onClose={() => setShowAddBankModal(false)} 
+        onSuccess={() => {
+          refetchBanks()
+          // Optionally select the newly added bank if we could get its name
+        }}
+      />
     </div>
   )
 }

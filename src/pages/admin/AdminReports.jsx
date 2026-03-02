@@ -14,7 +14,7 @@ const AdminReports = () => {
     const loadData = async () => {
       try {
         await Promise.all([
-          loadTrips(),
+          loadTrips({ limit: 0 }),
           loadLedger(),
           loadAgents(),
         ])
@@ -41,16 +41,84 @@ const AdminReports = () => {
   const [routeFilter, setRouteFilter] = useState('')
   const [lrSearchTerm, setLrSearchTerm] = useState('')
   const [showFilters, setShowFilters] = useState(true)
+  const isMasterData = reportType === 'Master Data'
   const [localTrips, setLocalTrips] = useState([])
   const [isGenerated, setIsGenerated] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+
+  // Helper to get person name
+  const getPersonName = (val) => {
+    if (!val) return 'N/A'
+    if (typeof val === 'string') {
+      // Check if it's an ID or already a name
+      const foundAgent = agents?.find(a => a._id === val || a.id === val)
+      return foundAgent?.name || val
+    }
+    return val.name || val.username || 'N/A'
+  }
+
+  // Enrich trips with report-specific fields
+  const enrichTrips = (tripsArray, currentReportType) => {
+    const isMD = currentReportType === 'Master Data'
+    
+    return tripsArray.map(trip => {
+      const deductions = trip.deductions || {}
+      const enriched = {
+        ...trip,
+        cess: deductions.cess || 0,
+        kata: deductions.kata || 0,
+        excessTonnage: deductions.excessTonnage || 0,
+        halting: deductions.halting || 0,
+        expenses: deductions.expenses || 0,
+        beta: deductions.beta || 0,
+        others: deductions.others || 0,
+        othersReason: deductions.othersReason || '',
+      }
+
+      if (isMD) {
+        // Advance
+        enriched.advanceAmount = trip.advance || trip.advancePaid || 0
+        enriched.advancePerson = getPersonName(trip.agent || trip.agentId)
+        
+        // Mid Payment (onTripPayments)
+        const midPayments = trip.onTripPayments || []
+        enriched.midPaymentAmount = midPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+        enriched.midPaymentPerson = midPayments.length > 0 
+          ? Array.from(new Set(midPayments.map(p => getPersonName(p.addedBy || p.bank || p.reason)))).join(', ') 
+          : 'N/A'
+        
+        // Closing Payment
+        enriched.closingPaymentAmount = trip.balance || trip.balanceAmount || 0
+        enriched.closingPaymentPerson = getPersonName(trip.closedBy || trip.agent || trip.agentId)
+        
+        // Totals
+        const lorryFreight = trip.freight || trip.freightAmount || 0
+        enriched.totalLorryFreight = lorryFreight
+        
+        const totalAdditions = (parseFloat(deductions.cess) || 0) + 
+                             (parseFloat(deductions.kata) || 0) + 
+                             (parseFloat(deductions.excessTonnage) || 0) + 
+                             (parseFloat(deductions.halting) || 0) + 
+                             (parseFloat(deductions.expenses) || 0) + 
+                             (parseFloat(deductions.others) || 0)
+        const betaAmount = parseFloat(deductions.beta) || 0
+        
+        enriched.totalLorryExpense = enriched.advanceAmount + enriched.midPaymentAmount + enriched.closingPaymentAmount + betaAmount - totalAdditions
+        enriched.billFreight = trip.freightAmount || trip.freight || 0
+        enriched.margin = (enriched.billFreight) - (lorryFreight)
+      }
+
+      return enriched
+    })
+  }
 
   // Process data based on report type
   const processedData = useMemo(() => {
     // If we have explicitly generated a report (for Agent wise performance), use localTrips
     // otherwise fall back to global trips
     let sourceData = isGenerated ? localTrips : trips
-    let filtered = [...sourceData]
+    let enriched = enrichTrips(sourceData, reportType)
+    let filtered = [...enriched]
 
     // Apply date filters - ONLY if not using generated report (generated report already filters by date)
     if (!isGenerated) {
@@ -287,12 +355,32 @@ const AdminReports = () => {
               agent,
               totalTopUps: 0,
               totalAmount: 0,
+              cashAmount: 0,
+              onlineAmount: 0,
+              banks: new Set(),
             }
           }
           topUpSummary[agent].totalTopUps++
-          topUpSummary[agent].totalAmount += (entry.amount || 0)
+          const amount = (entry.amount || 0)
+          topUpSummary[agent].totalAmount += amount
+          
+          // Determine mode based on bank
+          // If bank is 'Cash' (case-insensitive just in case), it's Cash. Otherwise Online.
+          const bankName = (entry.bank || '').trim()
+          if (bankName.toLowerCase() === 'cash') {
+            topUpSummary[agent].cashAmount += amount
+          } else {
+            topUpSummary[agent].onlineAmount += amount
+            if (bankName) {
+              topUpSummary[agent].banks.add(bankName)
+            }
+          }
         })
-        return Object.values(topUpSummary)
+        
+        return Object.values(topUpSummary).map(item => ({
+          ...item,
+          bankNames: Array.from(item.banks).join(', ') || '-'
+        }))
 
       case 'Route Profitability Heatmap':
         const routeProfitability = {}
@@ -391,21 +479,8 @@ const AdminReports = () => {
 
       default:
         // Trips - Detail
-        // Flatten the structure for reporting (add deductions as top level fields)
-        return filtered.map(trip => {
-          const deductions = trip.deductions || {}
-          return {
-            ...trip,
-            cess: deductions.cess || 0,
-            kata: deductions.kata || 0,
-            excessTonnage: deductions.excessTonnage || 0,
-            halting: deductions.halting || 0,
-            expenses: deductions.expenses || 0,
-            beta: deductions.beta || 0,
-            others: deductions.others || 0,
-            othersReason: deductions.othersReason || '',
-          }
-        })
+        return filtered
+
     }
   }, [trips, localTrips, isGenerated, reportType, dateFrom, dateTo, selectedAgent, tripType, status, lrSheet, truckFilter, routeFilter, lrSearchTerm, ledger])
 
@@ -468,6 +543,9 @@ const AdminReports = () => {
         return [
           { key: 'agent', label: 'Agent' },
           { key: 'totalTopUps', label: 'Total Top-ups' },
+          { key: 'cashAmount', label: 'Cash Amount' },
+          { key: 'onlineAmount', label: 'Online Amount' },
+          { key: 'bankNames', label: 'Bank Name(s)' },
           { key: 'totalAmount', label: 'Total Amount' },
         ]
       case 'Route Profitability Heatmap':
@@ -503,6 +581,32 @@ const AdminReports = () => {
         ]
       default:
         // Trips - Detail or Normal trip - All
+        if (isMasterData) {
+          return [
+            { key: 'date', label: 'Date' },
+            { key: 'lrNumber', label: 'LR No' },
+            { key: 'agent', label: 'Agent' },
+            { key: 'truck', label: 'Truck' },
+            { key: 'route', label: 'Route' },
+            { key: 'advanceAmount', label: 'Advance Amount' },
+            { key: 'advancePerson', label: 'Advance Person' },
+            { key: 'midPaymentAmount', label: 'Mid Payment Amount' },
+            { key: 'midPaymentPerson', label: 'Mid Payment Person' },
+            { key: 'closingPaymentAmount', label: 'Closing Payment Amount' },
+            { key: 'closingPaymentPerson', label: 'Closing Payment Person' },
+            { key: 'beta', label: 'Beta' },
+            { key: 'excessTonnage', label: 'Excess Ton' },
+            { key: 'cess', label: 'Cess' },
+            { key: 'kata', label: 'Kata' },
+            { key: 'halting', label: 'Halting' },
+            { key: 'expenses', label: 'DA' },
+            { key: 'others', label: 'Others' },
+            { key: 'totalLorryFreight', label: 'Total Lorry Freight' },
+            { key: 'totalLorryExpense', label: 'Total Lorry Expense' },
+            { key: 'billFreight', label: 'BILL FREIGHT' },
+            { key: 'margin', label: 'MARGIN' },
+          ]
+        }
         return [
           { key: 'date', label: 'Date' },
           { key: 'lrNumber', label: 'LR No' },
@@ -538,6 +642,10 @@ const AdminReports = () => {
       if (status) filters.status = status
       if (lrSheet) filters.lrSheet = lrSheet
       
+      // Set limit to 0 for reports to fetch all records (no limit)
+      filters.limit = 0
+
+      
       // If no filters are selected, warn the user (optional, but good for UX)
       if (Object.keys(filters).length === 0 && !window.confirm('No filters selected. This will load all trips. Continue?')) {
         setIsLoading(false)
@@ -546,10 +654,19 @@ const AdminReports = () => {
 
       console.log('Fetching report with filters:', filters)
       const data = await tripAPI.getTrips(filters)
-      setLocalTrips(Array.isArray(data) ? data : [])
+      const tripsArray = responseToTripsArray(data)
+      const enrichedTrips = enrichTrips(tripsArray, reportType) // Enrich data before setting state
+      setLocalTrips(enrichedTrips)
       setIsGenerated(true)
       
-      toast.success(`Report generated: ${Array.isArray(data) ? data.length : 0} records found`, {
+      // Automatically trigger Excel export after generation
+      if (enrichedTrips.length > 0) {
+        setTimeout(() => {
+          handleExportExcel(enrichedTrips)
+        }, 100)
+      }
+      
+      toast.success(`Report generated: ${enrichedTrips.length} records found`, {
         position: 'top-right', 
         autoClose: 2000 
       })
@@ -566,6 +683,21 @@ const AdminReports = () => {
     clearFilters()
     setIsGenerated(false)
     setLocalTrips([])
+    
+    // Also reset report type to default if needed, though clearFilters usually handles it
+    setReportType('Trips - Detail')
+    
+    toast.info('Filters reset to default', {
+      position: 'top-right',
+      autoClose: 2000
+    })
+  }
+
+  // Helper to safely extract trips array from API response
+  const responseToTripsArray = (response) => {
+    if (Array.isArray(response)) return response
+    if (response && response.data && Array.isArray(response.data)) return response.data
+    return []
   }
 
   // Helper to format values consistently across all exports
@@ -593,7 +725,9 @@ const AdminReports = () => {
         colKey.includes('Credit') || colKey.includes('Debit') || colKey.includes('Amount') || 
         colKey.includes('netAmount') || colKey.includes('Spend') || colKey.includes('Profit') ||
         colKey.includes('Expenses') || colKey.includes('TopUps') || colKey.includes('WalletBalance') ||
-        colKey.includes('totalAmount') || colKey.includes('totalTopUps')) {
+        colKey.includes('totalAmount') || colKey.includes('totalTopUps') || 
+        colKey.includes('totalLorry') || colKey.includes('billFreight') || colKey.includes('margin') ||
+        colKey.includes('advanceAmount') || colKey.includes('midPaymentAmount') || colKey.includes('closingPaymentAmount')) {
       
       // For Excel, return as FORMATED STRING to enforce Left Alignment (matching headers) AND look like money.
       // Note: This sacrifices 'number' type for 'visual' alignment and formatting as requested.
@@ -719,8 +853,10 @@ const AdminReports = () => {
     })
   }
 
-  const handleExportExcel = () => {
-    if (filteredData.length === 0) {
+  const handleExportExcel = (dataOverride = null) => {
+    const dataToExport = dataOverride && Array.isArray(dataOverride) ? dataOverride : filteredData;
+
+    if (dataToExport.length === 0) {
       toast.error('No data to export', {
         position: 'top-right',
         autoClose: 3000,
@@ -729,18 +865,60 @@ const AdminReports = () => {
     }
 
     const columns = getTableColumns()
-    
-    // Prepare data for Excel
-    const excelData = filteredData.map(row => {
-      const excelRow = {}
-      columns.forEach(col => {
-        excelRow[col.label] = getFormattedValue(row, col.key, true) // true for Excel (keep numbers)
-      })
-      return excelRow
-    })
+    let worksheet;
 
-    // Create workbook and worksheet
-    const worksheet = XLSX.utils.json_to_sheet(excelData)
+    if (isMasterData) {
+      // Master Data Multi-row Header Implementation
+      const headerRow1 = [
+        'Date', 'LR No', 'Agent', 'Truck', 'Route', 
+        'Advance', '', 
+        'Mid Payment', '', 
+        'Closing Payment', '', 
+        'Beta', 'Excess Ton', 'Cess', 'Kata', 'Halting', 'DA', 'Others', 
+        'Total Lorry Freight', 'Total Lorry Expense', 'BILL FREIGHT', 'MARGIN'
+      ];
+      const headerRow2 = [
+        '', '', '', '', '', 
+        'Amount', 'Person', 
+        'Amount', 'Person', 
+        'Amount', 'Person', 
+        '', '', '', '', '', '', '', '', '', '', ''
+      ];
+
+      const dataRows = dataToExport.map(row => 
+        columns.map(col => getFormattedValue(row, col.key, true))
+      );
+
+
+      worksheet = XLSX.utils.aoa_to_sheet([headerRow1, headerRow2, ...dataRows]);
+      
+      // Define merges
+      const merges = [
+        // Horizontal merges for main categories
+        { s: { r: 0, c: 5 }, e: { r: 0, c: 6 } }, // Advance
+        { s: { r: 0, c: 7 }, e: { r: 0, c: 8 } }, // Mid Payment
+        { s: { r: 0, c: 9 }, e: { r: 0, c: 10 } }, // Closing Payment
+      ];
+
+      // Vertical merges for other headers
+      [0, 1, 2, 3, 4, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21].forEach(colIndex => {
+        merges.push({ s: { r: 0, c: 0 + colIndex }, e: { r: 1, c: 0 + colIndex } });
+      });
+
+      worksheet['!merges'] = merges;
+    } else {
+      // Standard Flat Header Implementation
+      const excelData = dataToExport.map(row => {
+        const excelRow = {}
+        columns.forEach(col => {
+          excelRow[col.label] = getFormattedValue(row, col.key, true)
+        })
+        return excelRow
+      })
+      worksheet = XLSX.utils.json_to_sheet(excelData)
+    }
+
+    // Create workbook
     const workbook = XLSX.utils.book_new()
     
     // Set column widths for better readability
@@ -820,6 +998,8 @@ const AdminReports = () => {
         {showFilters && (
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+            {/* Master Data Option moved to Report Type Dropdown */}
+            
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-2">
                 Report Type
@@ -830,6 +1010,7 @@ const AdminReports = () => {
                 className="input-field-3d"
               >
                 <option value="Trips - Detail">Trips - Detail</option>
+                <option value="Master Data">Master Data</option>
                 <option value="Trips - Summary by Company">Trips - Summary by Company</option>
                 <option value="Trips - Summary by Agent">Trips - Summary by Agent</option>
                 <option value="Trips - Summary by Truck">Trips - Summary by Truck</option>
@@ -870,23 +1051,26 @@ const AdminReports = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
+              <label className={`block text-sm font-medium mb-2 ${isMasterData ? 'text-gray-400' : 'text-text-secondary'}`}>
                 Agent
               </label>
-              <AgentFilter
-                selectedAgent={selectedAgent}
-                onAgentChange={setSelectedAgent}
-              />
+              <div className={isMasterData ? 'opacity-50 pointer-events-none' : ''}>
+                <AgentFilter
+                  selectedAgent={selectedAgent}
+                  onAgentChange={setSelectedAgent}
+                />
+              </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
+              <label className={`block text-sm font-medium mb-2 ${isMasterData ? 'text-gray-400' : 'text-text-secondary'}`}>
                 Trip Type
               </label>
               <select
                 value={tripType}
                 onChange={(e) => setTripType(e.target.value)}
-                className="input-field-3d"
+                className={`input-field-3d ${isMasterData ? 'bg-gray-100' : ''}`}
+                disabled={isMasterData}
               >
                 <option value="">All</option>
                 <option value="Normal">Normal</option>
@@ -895,13 +1079,14 @@ const AdminReports = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
+              <label className={`block text-sm font-medium mb-2 ${isMasterData ? 'text-gray-400' : 'text-text-secondary'}`}>
                 Status
               </label>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="input-field-3d"
+                className={`input-field-3d ${isMasterData ? 'bg-gray-100' : ''}`}
+                disabled={isMasterData}
               >
                 <option value="">All</option>
                 <option value="Active">Active</option>
@@ -913,13 +1098,14 @@ const AdminReports = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
+              <label className={`block text-sm font-medium mb-2 ${isMasterData ? 'text-gray-400' : 'text-text-secondary'}`}>
                 LR Sheet
               </label>
               <select
                 value={lrSheet}
                 onChange={(e) => setLrSheet(e.target.value)}
-                className="input-field-3d"
+                className={`input-field-3d ${isMasterData ? 'bg-gray-100' : ''}`}
+                disabled={isMasterData}
               >
                 <option value="">All</option>
                 <option value="Not Received">Not Received</option>
@@ -928,33 +1114,35 @@ const AdminReports = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
+              <label className={`block text-sm font-medium mb-2 ${isMasterData ? 'text-gray-400' : 'text-text-secondary'}`}>
                 Truck (contains)
               </label>
               <input
                 type="text"
                 value={truckFilter}
                 onChange={(e) => setTruckFilter(e.target.value)}
-                className="input-field-3d"
+                className={`input-field-3d ${isMasterData ? 'bg-gray-100' : ''}`}
                 placeholder="Enter truck number"
+                disabled={isMasterData}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
+              <label className={`block text-sm font-medium mb-2 ${isMasterData ? 'text-gray-400' : 'text-text-secondary'}`}>
                 Route (contains)
               </label>
               <input
                 type="text"
                 value={routeFilter}
                 onChange={(e) => setRouteFilter(e.target.value)}
-                className="input-field-3d"
+                className={`input-field-3d ${isMasterData ? 'bg-gray-100' : ''}`}
                 placeholder="Enter route"
+                disabled={isMasterData}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
+              <label className={`block text-sm font-medium mb-2 ${isMasterData ? 'text-gray-400' : 'text-text-secondary'}`}>
                 LR Number
               </label>
               <div className="relative">
@@ -963,8 +1151,9 @@ const AdminReports = () => {
                   type="text"
                   value={lrSearchTerm}
                   onChange={(e) => setLrSearchTerm(e.target.value)}
-                  className="input-field-3d pl-10 pr-10"
+                  className={`input-field-3d pl-10 pr-10 ${isMasterData ? 'bg-gray-100' : ''}`}
                   placeholder="Search by LR Number..."
+                  disabled={isMasterData}
                 />
                 {lrSearchTerm && (
                   <button

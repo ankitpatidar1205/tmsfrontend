@@ -1,15 +1,12 @@
-import React, { useState } from 'react'
-import { FiPlus, FiEye, FiEdit, FiTrash2, FiTruck } from 'react-icons/fi'
+import React, { useState, useEffect } from 'react'
+import { FiPlus, FiEye, FiEdit, FiTrash2, FiTruck, FiChevronLeft, FiChevronRight } from 'react-icons/fi'
 import Modal from '../components/Modal'
 import { toast } from 'react-toastify'
+import { useData } from '../context/DataContext'
 
 const Trips = () => {
-  const [trips, setTrips] = useState([
-    { id: 1, tripId: 'TR001', route: 'Mumbai - Delhi', status: 'Active', freight: 50000, agent: 'John Doe' },
-    { id: 2, tripId: 'TR002', route: 'Delhi - Bangalore', status: 'Completed', freight: 45000, agent: 'Jane Smith' },
-    { id: 3, tripId: 'TR003', route: 'Bangalore - Chennai', status: 'Active', freight: 30000, agent: 'John Doe' },
-  ])
-
+  const { trips, tripsPagination, loadTrips, loading } = useData()
+  
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showViewModal, setShowViewModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -21,6 +18,11 @@ const Trips = () => {
     freight: '',  
     agent: '',
   })
+
+  // Load trips on mount
+  useEffect(() => {
+    loadTrips()
+  }, [])
 
   const handleCreate = () => {
     setFormData({ tripId: '', route: '', status: 'Active', freight: '', agent: '' })
@@ -35,7 +37,7 @@ const Trips = () => {
   const handleEdit = (trip) => {
     setSelectedTrip(trip)
     setFormData({
-      tripId: trip.tripId,
+      tripId: trip.tripId || trip.lrNumber,
       route: trip.route,
       status: trip.status,
       freight: trip.freight,
@@ -45,44 +47,17 @@ const Trips = () => {
   }
 
   const handleDelete = (id) => {
-    if (window.confirm('Are you sure you want to delete this trip?')) {
-      setTrips(trips.filter((trip) => trip.id !== id))
-      toast.success('Trip deleted successfully!', {
-        position: 'top-right',
-        autoClose: 2000,
-      })
+    if (window.confirm('Delete functionality not yet implemented via API')) {
+      // Placeholder
     }
   }
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (showCreateModal) {
-      const newTrip = {
-        id: Date.now(),
-        ...formData,
-        freight: parseFloat(formData.freight),
-      }
-      setTrips([...trips, newTrip])
-      toast.success('Trip created successfully!', {
-        position: 'top-right',
-        autoClose: 2000,
-      })
-    } else if (showEditModal) {
-      setTrips(
-        trips.map((trip) =>
-          trip.id === selectedTrip.id
-            ? { ...trip, ...formData, freight: parseFloat(formData.freight) }
-            : trip
-        )
-      )
-      toast.success('Trip updated successfully!', {
-        position: 'top-right',
-        autoClose: 2000,
-      })
-    }
+    // Placeholder for create/update logic
+    toast.info('Create/Update functionality not connected to backend yet')
     setShowCreateModal(false)
     setShowEditModal(false)
-    setFormData({ tripId: '', route: '', status: 'Active', freight: '', agent: '' })
   }
 
   return (
@@ -103,64 +78,114 @@ const Trips = () => {
 
       {/* Trips Table */}
       <div className="card overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b-2 border-secondary">
-              <th className="text-left py-3 px-4 text-text-secondary font-medium">Trip ID</th>
-              <th className="text-left py-3 px-4 text-text-secondary font-medium">Route</th>
-              <th className="text-left py-3 px-4 text-text-secondary font-medium">Status</th>
-              <th className="text-left py-3 px-4 text-text-secondary font-medium">Freight</th>
-              <th className="text-left py-3 px-4 text-text-secondary font-medium">Agent</th>
-              <th className="text-left py-3 px-4 text-text-secondary font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {trips.map((trip) => (
-              <tr key={trip.id} className="border-b-2 border-secondary hover:bg-background transition-colors">
-                <td className="py-4 px-4 text-text-primary font-medium">{trip.tripId}</td>
-                <td className="py-4 px-4 text-text-primary">{trip.route}</td>
-                <td className="py-4 px-4">
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      trip.status === 'Active'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-blue-100 text-blue-800'
+        {loading ? (
+          <div className="p-8 text-center text-text-secondary">Loading trips...</div>
+        ) : (
+          <>
+            <table className="w-full">
+              <thead>
+                <tr className="border-b-2 border-secondary">
+                  <th className="text-left py-3 px-4 text-text-secondary font-medium">Trip ID</th>
+                  <th className="text-left py-3 px-4 text-text-secondary font-medium">Route</th>
+                  <th className="text-left py-3 px-4 text-text-secondary font-medium">Status</th>
+                  <th className="text-left py-3 px-4 text-text-secondary font-medium">Freight</th>
+                  <th className="text-left py-3 px-4 text-text-secondary font-medium">Agent</th>
+                  <th className="text-left py-3 px-4 text-text-secondary font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trips.length > 0 ? (
+                  trips.map((trip) => (
+                    <tr key={trip.id || trip._id} className="border-b-2 border-secondary hover:bg-background transition-colors">
+                      <td className="py-4 px-4 text-text-primary font-medium">{trip.tripId || trip.lrNumber || 'N/A'}</td>
+                      <td className="py-4 px-4 text-text-primary">{trip.route || 'N/A'}</td>
+                      <td className="py-4 px-4">
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            trip.status === 'Active'
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-blue-100 text-blue-800'
+                          }`}
+                        >
+                          {trip.status || 'Active'}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4 text-text-primary">Rs {(trip.freight || 0).toLocaleString()}</td>
+                      <td className="py-4 px-4 text-text-primary">{typeof trip.agent === 'string' ? trip.agent : (trip.agent?.name || 'N/A')}</td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleView(trip)}
+                            className="p-2 text-primary hover:bg-primary hover:text-white rounded-lg transition-all shadow-3d hover:shadow-3d-hover"
+                            title="View"
+                          >
+                            <FiEye size={18} />
+                          </button>
+                          <button
+                            onClick={() => handleEdit(trip)}
+                            className="p-2 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-all shadow-3d hover:shadow-3d-hover"
+                            title="Edit"
+                          >
+                            <FiEdit size={18} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(trip.id || trip._id)}
+                            className="p-2 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition-all shadow-3d hover:shadow-3d-hover"
+                            title="Delete"
+                          >
+                            <FiTrash2 size={18} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="text-center py-8 text-text-secondary">
+                      No trips found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            
+            {/* Pagination Controls */}
+            {tripsPagination && tripsPagination.pages > 1 && (
+              <div className="flex items-center justify-between mt-4">
+                <div className="text-sm text-text-secondary">
+                  Showing <span className="font-medium">{(tripsPagination.page - 1) * tripsPagination.limit + 1}</span> to <span className="font-medium">{Math.min(tripsPagination.page * tripsPagination.limit, tripsPagination.total)}</span> of <span className="font-medium">{tripsPagination.total}</span> entries
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => loadTrips({ page: tripsPagination.page - 1, limit: tripsPagination.limit })}
+                    disabled={tripsPagination.page === 1}
+                    className={`p-2 rounded-lg border ${
+                      tripsPagination.page === 1
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                        : 'bg-white text-text-primary border-gray-300 hover:bg-gray-50 text-sm font-medium transition-colors shadow-sm'
                     }`}
                   >
-                    {trip.status}
+                    <FiChevronLeft size={16} />
+                  </button>
+                  <span className="text-sm font-medium text-text-primary px-2">
+                    Page {tripsPagination.page} of {tripsPagination.pages}
                   </span>
-                </td>
-                <td className="py-4 px-4 text-text-primary">Rs {trip.freight.toLocaleString()}</td>
-                <td className="py-4 px-4 text-text-primary">{trip.agent}</td>
-                <td className="py-4 px-4">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleView(trip)}
-                      className="p-2 text-primary hover:bg-primary hover:text-white rounded-lg transition-all shadow-3d hover:shadow-3d-hover"
-                      title="View"
-                    >
-                      <FiEye size={18} />
-                    </button>
-                    <button
-                      onClick={() => handleEdit(trip)}
-                      className="p-2 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-all shadow-3d hover:shadow-3d-hover"
-                      title="Edit"
-                    >
-                      <FiEdit size={18} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(trip.id)}
-                      className="p-2 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition-all shadow-3d hover:shadow-3d-hover"
-                      title="Delete"
-                    >
-                      <FiTrash2 size={18} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  <button
+                    onClick={() => loadTrips({ page: tripsPagination.page + 1, limit: tripsPagination.limit })}
+                    disabled={tripsPagination.page === tripsPagination.pages}
+                    className={`p-2 rounded-lg border ${
+                      tripsPagination.page === tripsPagination.pages
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                        : 'bg-white text-text-primary border-gray-300 hover:bg-gray-50 text-sm font-medium transition-colors shadow-sm'
+                    }`}
+                  >
+                    <FiChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Create Modal */}
@@ -264,7 +289,7 @@ const Trips = () => {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-1">Trip ID</label>
-              <p className="text-text-primary font-medium">{selectedTrip.tripId}</p>
+              <p className="text-text-primary font-medium">{selectedTrip.tripId || selectedTrip.lrNumber}</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-1">Route</label>
@@ -284,11 +309,11 @@ const Trips = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-1">Freight</label>
-              <p className="text-text-primary">Rs {selectedTrip.freight.toLocaleString()}</p>
+              <p className="text-text-primary">Rs {(selectedTrip.freight || 0).toLocaleString()}</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-1">Agent</label>
-              <p className="text-text-primary">{selectedTrip.agent}</p>
+              <p className="text-text-primary">{typeof selectedTrip.agent === 'string' ? selectedTrip.agent : (selectedTrip.agent?.name || 'N/A')}</p>
             </div>
             <div className="flex justify-end pt-4">
               <button
@@ -392,4 +417,3 @@ const Trips = () => {
 }
 
 export default Trips
-

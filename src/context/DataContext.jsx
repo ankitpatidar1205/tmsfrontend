@@ -26,8 +26,12 @@ export const DataProvider = ({ children }) => {
   const [branches, setBranches] = useState([])
   const [agents, setAgents] = useState([])
   const [trips, setTrips] = useState([])
+  const [tripsPagination, setTripsPagination] = useState({ page: 1, limit: 20, total: 0, pages: 1 })
   const [ledger, setLedger] = useState([])
+  const [ledgerPagination, setLedgerPagination] = useState({ page: 1, limit: 20, total: 0, pages: 1 })
+  const [ledgerTotals, setLedgerTotals] = useState({ totalCredit: 0, totalDebit: 0 })
   const [disputes, setDisputes] = useState([])
+  const [disputesPagination, setDisputesPagination] = useState({ page: 1, limit: 20, total: 0, pages: 1 })
 
   // Load initial data
   useEffect(() => {
@@ -93,9 +97,18 @@ export const DataProvider = ({ children }) => {
         // Use id first, fallback to _id (both are same in localStorage)
         filters.agentId = user.id || user._id
       }
-      const data = await tripAPI.getTrips(filters)
-      const tripsArray = Array.isArray(data) ? data : []
-      setTrips(tripsArray)
+      const response = await tripAPI.getTrips(filters)
+      
+      let tripsArray = []
+      if (response && response.data && response.pagination) {
+        tripsArray = response.data
+        setTrips(response.data)
+        setTripsPagination(response.pagination)
+      } else {
+        tripsArray = Array.isArray(response) ? response : []
+        setTrips(tripsArray)
+      }
+      
       return tripsArray
     } catch (error) {
       console.error('Error loading trips:', error)
@@ -110,8 +123,17 @@ export const DataProvider = ({ children }) => {
       if (user?.role === 'Agent' && user?.id) {
         filters.agentId = user.id
       }
-      const data = await ledgerAPI.getLedger(filters)
-      setLedger(data || [])
+      const response = await ledgerAPI.getLedger(filters)
+      
+      if (response && response.data && response.pagination) {
+        setLedger(response.data)
+        setLedgerPagination(response.pagination)
+        if (response.totals) {
+          setLedgerTotals(response.totals)
+        }
+      } else {
+        setLedger(Array.isArray(response) ? response : [])
+      }
     } catch (error) {
       console.error('Error loading ledger:', error)
       setLedger([])
@@ -124,8 +146,14 @@ export const DataProvider = ({ children }) => {
       if (user?.role === 'Agent' && (user?.id || user?._id)) {
         filters.agentId = user.id || user._id
       }
-      const data = await disputeAPI.getDisputes(filters)
-      setDisputes(Array.isArray(data) ? data : [])
+      const response = await disputeAPI.getDisputes(filters)
+      
+      if (response && response.data && response.pagination) {
+        setDisputes(response.data)
+        setDisputesPagination(response.pagination)
+      } else {
+        setDisputes(Array.isArray(response) ? response : [])
+      }
     } catch (error) {
       console.error('Error loading disputes:', error)
       setDisputes([])
@@ -457,8 +485,11 @@ export const DataProvider = ({ children }) => {
   const value = {
     // Data
     trips,
+    tripsPagination,
     ledger,
+    ledgerPagination,
     disputes,
+    disputesPagination,
     agents,
     branches,
     loading,
@@ -480,6 +511,7 @@ export const DataProvider = ({ children }) => {
     deleteLedgerEntry,
     addTopUp,
     transferToAgent,
+    ledgerTotals,
     
     // Dispute functions
     addDispute,

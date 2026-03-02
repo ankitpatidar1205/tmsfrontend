@@ -12,6 +12,7 @@ import {
   FiX,
   FiMenu,
   FiDollarSign,
+  FiCreditCard,
 } from 'react-icons/fi'
 import logo from '../assets/logo.png'
 
@@ -36,6 +37,7 @@ const AdminSidebar = ({ isMobileOpen: externalIsMobileOpen, setIsMobileOpen: set
     { path: '/admin/reports', label: 'Reports', icon: FiFileText },
     { path: '/admin/audit-logs', label: 'Audit Logs', icon: FiFileText },
     { path: '/admin/settings', label: 'Settings', icon: FiSettings },
+    { path: '/admin/banks', label: 'Banks', icon: FiCreditCard },
   ]
 
   const isActive = (path) => location.pathname === path

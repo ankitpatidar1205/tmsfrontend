@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
+import { useBanks } from '../hooks/useBanks'
 import { FiArrowLeft, FiUpload, FiX, FiAlertCircle, FiCheckCircle, FiFile, FiEye, FiInfo, FiTrash } from 'react-icons/fi'
 import { toast } from 'react-toastify'
 import BaseUrl from '../utils/BaseUrl'
@@ -11,6 +12,7 @@ const TripView = () => {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { trips, getTripById, updateTrip, addOnTripPayment, updateDeductions, addAttachment, deleteAttachment, closeTrip, addDispute, getAgents, disputes, loadTrips, loadLedger, ledger, agents } = useData()
+  const { banks } = useBanks()
   
   const [trip, setTrip] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -1403,14 +1405,11 @@ const TripView = () => {
                             disabled={paymentForm.mode === 'Cash'}
                           >
                             <option value="">Select Bank</option>
-                            <option value="HDFC Bank">HDFC Bank</option>
-                            <option value="ICICI Bank">ICICI Bank</option>
-                            <option value="State Bank of India">State Bank of India</option>
-                            <option value="Axis Bank">Axis Bank</option>
-                            <option value="Kotak Mahindra Bank">Kotak Mahindra Bank</option>
-                            <option value="Punjab National Bank">Punjab National Bank</option>
-                            <option value="Bank of Baroda">Bank of Baroda</option>
-                            <option value="Canara Bank">Canara Bank</option>
+                            {banks.map((bank) => (
+                              <option key={bank._id} value={bank.name}>
+                                {bank.name}
+                              </option>
+                            ))}
                           </select>
                         </div>
                       </div>
@@ -1948,14 +1947,11 @@ const TripView = () => {
                     className="input-field-3d w-full"
                   >
                     <option value="">Select Bank</option>
-                    <option value="HDFC Bank">HDFC Bank</option>
-                    <option value="ICICI Bank">ICICI Bank</option>
-                    <option value="State Bank of India">State Bank of India</option>
-                    <option value="Axis Bank">Axis Bank</option>
-                    <option value="Kotak Mahindra Bank">Kotak Mahindra Bank</option>
-                    <option value="Punjab National Bank">Punjab National Bank</option>
-                    <option value="Bank of Baroda">Bank of Baroda</option>
-                    <option value="Canara Bank">Canara Bank</option>
+                    {banks.map((bank) => (
+                      <option key={bank._id} value={bank.name}>
+                        {bank.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               )}

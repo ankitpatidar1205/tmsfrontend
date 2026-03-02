@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { FiPlus, FiEye, FiCheckCircle, FiXCircle } from 'react-icons/fi'
+import { useData } from '../context/DataContext'
+import { FiPlus, FiEye, FiCheckCircle, FiXCircle, FiChevronLeft, FiChevronRight } from 'react-icons/fi'
 import Modal from '../components/Modal'
 import { toast } from 'react-toastify'
 
@@ -9,29 +10,7 @@ const Disputes = () => {
   const isAdmin = user?.role === 'SuperAdmin' || user?.role === 'Admin'
   const isAgent = user?.role === 'Agent'
 
-  // Mock data
-  const [disputes, setDisputes] = useState([
-    { 
-      id: 1, 
-      disputeId: 'D001', 
-      tripId: 'TR001', 
-      agent: 'John Doe', 
-      reason: 'Amount discrepancy', 
-      amount: 5000, 
-      status: 'Open', 
-      createdAt: '2024-01-15' 
-    },
-    { 
-      id: 2, 
-      disputeId: 'D002', 
-      tripId: 'TR045', 
-      agent: 'Jane Smith', 
-      reason: 'Route issue', 
-      amount: 3000, 
-      status: 'Resolved', 
-      createdAt: '2024-01-14' 
-    },
-  ])
+  const { disputes, disputesPagination, loadDisputes, loading } = useData()
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showViewModal, setShowViewModal] = useState(false)
@@ -42,11 +21,16 @@ const Disputes = () => {
     amount: '',
   })
 
-  // Mock active trips for agent
+  // Mock active trips for agent (ideally this should also come from API)
   const activeTrips = [
     { id: 1, tripId: 'TR001', route: 'Mumbai - Delhi' },
     { id: 2, tripId: 'TR023', route: 'Bangalore - Chennai' },
   ]
+
+  // Load disputes on mount
+  useEffect(() => {
+    loadDisputes()
+  }, [])
 
   const handleCreate = () => {
     setFormData({ tripId: '', reason: '', amount: '' })
@@ -59,51 +43,15 @@ const Disputes = () => {
   }
 
   const handleResolve = (id) => {
-    setDisputes(
-      disputes.map((dispute) =>
-        dispute.id === id ? { ...dispute, status: 'Resolved' } : dispute
-      )
-    )
-    toast.success('Dispute resolved successfully!', {
-      position: 'top-right',
-      autoClose: 2000,
-    })
+    toast.info('Resolve functionality not connected to backend yet')
   }
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (!formData.tripId || !formData.reason || !formData.amount) {
-      toast.error('Please fill all fields', {
-        position: 'top-right',
-        autoClose: 3000,
-      })
-      return
-    }
-
-    const newDispute = {
-      id: Date.now(),
-      disputeId: `D${String(Date.now()).slice(-3)}`,
-      tripId: formData.tripId,
-      agent: user?.name || 'Agent',
-      reason: formData.reason,
-      amount: parseFloat(formData.amount),
-      status: 'Open',
-      createdAt: new Date().toISOString().split('T')[0],
-    }
-
-    setDisputes([...disputes, newDispute])
-    toast.success('Dispute raised successfully!', {
-      position: 'top-right',
-      autoClose: 2000,
-    })
+    toast.info('Create functionality not connected to backend yet')
     setShowCreateModal(false)
     setFormData({ tripId: '', reason: '', amount: '' })
   }
-
-  // Filter disputes for agents (only their own)
-  const displayedDisputes = isAgent
-    ? disputes.filter((d) => d.agent === user?.name)
-    : disputes
 
   return (
     <div className="p-6">
@@ -129,63 +77,113 @@ const Disputes = () => {
 
       {/* Disputes Table */}
       <div className="card overflow-x-auto">
-        <table className="w-full table-auto">
-          <thead>
-            <tr className="border-b-2 border-secondary">
-              <th className="text-left py-3 px-4 text-text-secondary font-medium">Dispute ID</th>
-              <th className="text-left py-3 px-4 text-text-secondary font-medium">Trip ID</th>
-              {!isAgent && <th className="text-left py-3 px-4 text-text-secondary font-medium">Agent</th>}
-              <th className="text-left py-3 px-4 text-text-secondary font-medium">Reason</th>
-              <th className="text-left py-3 px-4 text-text-secondary font-medium">Amount</th>
-              <th className="text-left py-3 px-4 text-text-secondary font-medium">Status</th>
-              <th className="text-left py-3 px-4 text-text-secondary font-medium">Created</th>
-              <th className="text-left py-3 px-4 text-text-secondary font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {displayedDisputes.map((dispute) => (
-              <tr key={dispute.id} className="border-b-2 border-secondary hover:bg-background transition-colors">
-                <td className="py-4 px-4 text-text-primary font-medium">{dispute.disputeId}</td>
-                <td className="py-4 px-4 text-text-primary">{dispute.tripId}</td>
-                {!isAgent && <td className="py-4 px-4 text-text-primary">{dispute.agent}</td>}
-                <td className="py-4 px-4 text-text-primary">{dispute.reason}</td>
-                <td className="py-4 px-4 text-text-primary">Rs {dispute.amount.toLocaleString()}</td>
-                <td className="py-4 px-4">
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      dispute.status === 'Open'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-green-100 text-green-800'
+        {loading ? (
+          <div className="p-8 text-center text-text-secondary">Loading disputes...</div>
+        ) : (
+          <>
+            <table className="w-full table-auto">
+              <thead>
+                <tr className="border-b-2 border-secondary">
+                  <th className="text-left py-3 px-4 text-text-secondary font-medium">Dispute ID</th>
+                  <th className="text-left py-3 px-4 text-text-secondary font-medium">Trip ID</th>
+                  {!isAgent && <th className="text-left py-3 px-4 text-text-secondary font-medium">Agent</th>}
+                  <th className="text-left py-3 px-4 text-text-secondary font-medium">Reason</th>
+                  <th className="text-left py-3 px-4 text-text-secondary font-medium">Amount</th>
+                  <th className="text-left py-3 px-4 text-text-secondary font-medium">Status</th>
+                  <th className="text-left py-3 px-4 text-text-secondary font-medium">Created</th>
+                  <th className="text-left py-3 px-4 text-text-secondary font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {disputes.length > 0 ? (
+                  disputes.map((dispute) => (
+                    <tr key={dispute.id} className="border-b-2 border-secondary hover:bg-background transition-colors">
+                      <td className="py-4 px-4 text-text-primary font-medium">{dispute.disputeId}</td>
+                      <td className="py-4 px-4 text-text-primary">{dispute.tripId?.lrNumber || dispute.tripId || 'N/A'}</td>
+                      {!isAgent && <td className="py-4 px-4 text-text-primary">{typeof dispute.agent === 'string' ? dispute.agent : (dispute.agent?.name || 'N/A')}</td>}
+                      <td className="py-4 px-4 text-text-primary">{dispute.reason}</td>
+                      <td className="py-4 px-4 text-text-primary">Rs {(dispute.amount || 0).toLocaleString()}</td>
+                      <td className="py-4 px-4">
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            dispute.status === 'Open'
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : 'bg-green-100 text-green-800'
+                          }`}
+                        >
+                          {dispute.status}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4 text-text-primary">{dispute.createdAt ? new Date(dispute.createdAt).toLocaleDateString() : 'N/A'}</td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleView(dispute)}
+                            className="p-2 text-primary hover:bg-primary hover:text-white rounded-lg transition-all shadow-3d hover:shadow-3d-hover"
+                            title="View"
+                          >
+                            <FiEye size={18} />
+                          </button>
+                          {isAdmin && dispute.status === 'Open' && (
+                            <button
+                              onClick={() => handleResolve(dispute.id)}
+                              className="p-2 text-green-600 hover:bg-green-600 hover:text-white rounded-lg transition-all shadow-3d hover:shadow-3d-hover"
+                              title="Resolve"
+                            >
+                              <FiCheckCircle size={18} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={isAgent ? 7 : 8} className="text-center py-8 text-text-secondary">
+                      No disputes found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+
+            {/* Pagination Controls */}
+            {disputesPagination && disputesPagination.pages > 1 && (
+              <div className="flex items-center justify-between mt-4">
+                <div className="text-sm text-text-secondary">
+                  Showing <span className="font-medium">{(disputesPagination.page - 1) * disputesPagination.limit + 1}</span> to <span className="font-medium">{Math.min(disputesPagination.page * disputesPagination.limit, disputesPagination.total)}</span> of <span className="font-medium">{disputesPagination.total}</span> entries
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => loadDisputes({ page: disputesPagination.page - 1, limit: disputesPagination.limit })}
+                    disabled={disputesPagination.page === 1}
+                    className={`p-2 rounded-lg border ${
+                      disputesPagination.page === 1
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                        : 'bg-white text-text-primary border-gray-300 hover:bg-gray-50 text-sm font-medium transition-colors shadow-sm'
                     }`}
                   >
-                    {dispute.status}
+                    <FiChevronLeft size={16} />
+                  </button>
+                  <span className="text-sm font-medium text-text-primary px-2">
+                    Page {disputesPagination.page} of {disputesPagination.pages}
                   </span>
-                </td>
-                <td className="py-4 px-4 text-text-primary">{dispute.createdAt}</td>
-                <td className="py-4 px-4">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleView(dispute)}
-                      className="p-2 text-primary hover:bg-primary hover:text-white rounded-lg transition-all shadow-3d hover:shadow-3d-hover"
-                      title="View"
-                    >
-                      <FiEye size={18} />
-                    </button>
-                    {isAdmin && dispute.status === 'Open' && (
-                      <button
-                        onClick={() => handleResolve(dispute.id)}
-                        className="p-2 text-green-600 hover:bg-green-600 hover:text-white rounded-lg transition-all shadow-3d hover:shadow-3d-hover"
-                        title="Resolve"
-                      >
-                        <FiCheckCircle size={18} />
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  <button
+                    onClick={() => loadDisputes({ page: disputesPagination.page + 1, limit: disputesPagination.limit })}
+                    disabled={disputesPagination.page === disputesPagination.pages}
+                    className={`p-2 rounded-lg border ${
+                      disputesPagination.page === disputesPagination.pages
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                        : 'bg-white text-text-primary border-gray-300 hover:bg-gray-50 text-sm font-medium transition-colors shadow-sm'
+                    }`}
+                  >
+                    <FiChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Create Dispute Modal (Agent Only) */}
@@ -274,12 +272,12 @@ const Disputes = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-1">Trip ID</label>
-              <p className="text-text-primary">{selectedDispute.tripId}</p>
+              <p className="text-text-primary">{selectedDispute.tripId?.lrNumber || selectedDispute.tripId || 'N/A'}</p>
             </div>
             {!isAgent && (
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-1">Agent</label>
-                <p className="text-text-primary">{selectedDispute.agent}</p>
+                <p className="text-text-primary">{typeof selectedDispute.agent === 'string' ? selectedDispute.agent : (selectedDispute.agent?.name || 'N/A')}</p>
               </div>
             )}
             <div>
@@ -288,7 +286,7 @@ const Disputes = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-1">Amount</label>
-              <p className="text-text-primary font-semibold">Rs {selectedDispute.amount.toLocaleString()}</p>
+              <p className="text-text-primary font-semibold">Rs {(selectedDispute.amount || 0).toLocaleString()}</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-1">Status</label>
@@ -304,7 +302,7 @@ const Disputes = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-1">Created At</label>
-              <p className="text-text-primary">{selectedDispute.createdAt}</p>
+              <p className="text-text-primary">{selectedDispute.createdAt ? new Date(selectedDispute.createdAt).toLocaleDateString() : 'N/A'}</p>
             </div>
             <div className="flex justify-end pt-4">
               <button

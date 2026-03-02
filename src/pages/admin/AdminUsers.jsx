@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useData } from '../../context/DataContext'
 import { userAPI } from '../../services/api'
-import { FiPlus, FiEdit, FiTrash2, FiUser, FiSearch, FiX, FiEye, FiEyeOff } from 'react-icons/fi'
+import { FiPlus, FiEdit, FiTrash2, FiUser, FiSearch, FiX, FiEye, FiEyeOff, FiChevronLeft, FiChevronRight } from 'react-icons/fi'
 import { toast } from 'react-toastify'
 
 const AdminUsers = () => {
@@ -16,6 +16,8 @@ const AdminUsers = () => {
   const [selectedUser, setSelectedUser] = useState(null)
   const [showPassword, setShowPassword] = useState(false)
   const [nameSearchTerm, setNameSearchTerm] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const ITEMS_PER_PAGE = 20
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -244,6 +246,17 @@ const AdminUsers = () => {
     return filtered
   }, [users, nameSearchTerm])
 
+  const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE)
+  const paginatedUsers = filteredUsers.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  )
+
+  // Reset to page 1 when search changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [nameSearchTerm])
+
   if (loading) {
     return (
       <div className="p-3 sm:p-6">
@@ -314,7 +327,7 @@ const AdminUsers = () => {
                   </td>
                 </tr>
               ) : filteredUsers.length > 0 ? (
-                filteredUsers.map((user, index) => (
+                paginatedUsers.map((user, index) => (
                   <tr key={user.id || user._id || `user-${index}`} className="border-b-2 border-secondary hover:bg-background transition-colors">
                     <td className="py-3 sm:py-4 px-2 sm:px-4 text-text-primary font-medium text-xs sm:text-sm break-words">{user.name}</td>
                     <td className="py-3 sm:py-4 px-2 sm:px-4 text-text-primary text-xs sm:text-sm break-words">{user.email}</td>
@@ -369,6 +382,44 @@ const AdminUsers = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between mt-4 px-2">
+            <div className="text-sm text-text-secondary">
+              Showing <span className="font-medium">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to{' '}
+              <span className="font-medium">{Math.min(currentPage * ITEMS_PER_PAGE, filteredUsers.length)}</span> of{' '}
+              <span className="font-medium">{filteredUsers.length}</span> users
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className={`p-2 rounded-lg border ${
+                  currentPage === 1
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'bg-white text-text-primary border-gray-300 hover:bg-gray-50 transition-colors shadow-sm'
+                }`}
+              >
+                <FiChevronLeft size={16} />
+              </button>
+              <span className="text-sm font-medium text-text-primary px-2">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className={`p-2 rounded-lg border ${
+                  currentPage === totalPages
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'bg-white text-text-primary border-gray-300 hover:bg-gray-50 transition-colors shadow-sm'
+                }`}
+              >
+                <FiChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Create Modal */}

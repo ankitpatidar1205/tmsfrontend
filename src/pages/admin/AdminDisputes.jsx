@@ -1,19 +1,20 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useData } from '../../context/DataContext'
-import { FiEye, FiCheckCircle, FiSearch, FiX, FiExternalLink, FiAlertTriangle } from 'react-icons/fi'
+import { FiEye, FiCheckCircle, FiSearch, FiX, FiExternalLink, FiAlertTriangle, FiChevronLeft, FiChevronRight } from 'react-icons/fi'
 import AdminModal from '../../components/modals/AdminModal'
 import AgentFilter from '../../components/AgentFilter'
 import { toast } from 'react-toastify'
 
 const AdminDisputes = () => {
   const navigate = useNavigate()
-  const { disputes, updateDispute, trips, loadTrips } = useData()
+  const { disputes, disputesPagination, loadDisputes, updateDispute, trips, loadTrips } = useData()
   const [selectedAgentId, setSelectedAgentId] = useState(null)
   const [lrSearchTerm, setLrSearchTerm] = useState('')
 
-  // Load trips if not loaded (for freight info)
+  // Load disputes and trips on mount
   useEffect(() => {
+    loadDisputes()
     if (!trips || trips.length === 0) {
       loadTrips()
     }
@@ -268,6 +269,44 @@ const AdminDisputes = () => {
             )}
           </tbody>
         </table>
+
+        {/* Pagination Controls */}
+        {disputesPagination && disputesPagination.pages > 1 && (
+          <div className="flex items-center justify-between mt-4 px-2">
+            <div className="text-sm text-text-secondary">
+              Showing <span className="font-medium">{(disputesPagination.page - 1) * disputesPagination.limit + 1}</span> to{' '}
+              <span className="font-medium">{Math.min(disputesPagination.page * disputesPagination.limit, disputesPagination.total)}</span> of{' '}
+              <span className="font-medium">{disputesPagination.total}</span> entries
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => loadDisputes({ page: disputesPagination.page - 1, limit: disputesPagination.limit })}
+                disabled={disputesPagination.page === 1}
+                className={`p-2 rounded-lg border ${
+                  disputesPagination.page === 1
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'bg-white text-text-primary border-gray-300 hover:bg-gray-50 transition-colors shadow-sm'
+                }`}
+              >
+                <FiChevronLeft size={16} />
+              </button>
+              <span className="text-sm font-medium text-text-primary px-2">
+                Page {disputesPagination.page} of {disputesPagination.pages}
+              </span>
+              <button
+                onClick={() => loadDisputes({ page: disputesPagination.page + 1, limit: disputesPagination.limit })}
+                disabled={disputesPagination.page === disputesPagination.pages}
+                className={`p-2 rounded-lg border ${
+                  disputesPagination.page === disputesPagination.pages
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'bg-white text-text-primary border-gray-300 hover:bg-gray-50 transition-colors shadow-sm'
+                }`}
+              >
+                <FiChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* View Modal */}
